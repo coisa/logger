@@ -1,0 +1,15 @@
+*.php                     diff=php
+/.github                  export-ignore
+/examples                 export-ignore
+/tests                    export-ignore
+/.dockerignore            export-ignore
+/.docheader               export-ignore
+/.editorconfig            export-ignore
+/.gitattributes           export-ignore
+/.gitignore               export-ignore
+/.php-cs-fixer.dist.php   export-ignore
+/docker-compose.yml       export-ignore
+/Dockerfile               export-ignore
+/Makefile                 export-ignore
+/phpcs.xml.dist           export-ignore
+/phpunit.xml              export-ignore
