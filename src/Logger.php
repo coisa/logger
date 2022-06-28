@@ -29,11 +29,6 @@ use Monolog\Processor\WebProcessor;
 use Psr\Log\AbstractLogger;
 use Psr\Log\LoggerInterface;
 
-/**
- * Class Logger.
- *
- * @package CoiSA\Logger
- */
 final class Logger extends AbstractLogger
 {
     private LoggerInterface $logger;
