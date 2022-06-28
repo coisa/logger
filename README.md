@@ -1,4 +1,4 @@
-# CoiSA Logger
+# CoiSA Logger - [Twelve-Factor](https://12factor.net/logs) PSR-3 Logger
 
 [![PHP Version][ico-php]][link-packagist]
 [![Latest Version on Packagist][ico-version]][link-packagist]

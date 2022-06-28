@@ -1,7 +1,7 @@
 {
     "name": "coisa/logger",
     "type": "library",
-    "description": "Simple standard output PSR-3 logger",
+    "description": "Twelve-Factory PSR-3 logger on top of Monolog",
     "license": "MIT",
     "authors": [
         {
@@ -11,6 +11,8 @@
     ],
     "require": {
         "php": "^7.4 || ^8.0",
+        "monolog/monolog": "^2.7",
+        "psr/container": "^1.1 || ^2.0",
         "psr/log": "^1.1"
     },
     "require-dev": {
@@ -33,6 +35,9 @@
     "extra": {
         "branch-alias": {
             "dev-1.x": "1.0-dev"
+        },
+        "laminas": {
+            "config-provider": "CoiSA\\Logger\\ConfigProvider"
         }
     },
     "autoload": {
