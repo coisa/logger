@@ -19,12 +19,7 @@ use CoiSA\Logger\LoggerFactory;
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
-function main(): void
-{
-    $logger = LoggerFactory::createLogger();
-    $logger->info('Hello World!', ['name' => 'Felipe']);
-    $logger->error('Buy World!', ['nickname' => 'CoiSA']);
-    $logger->debug('Backtrace!', debug_backtrace());
-}
+$logger = LoggerFactory::createLogger();
+$logger->info('Hello World!', ['key' => uniqid('key'), 'name' => uniqid('name')]);
 
-main();
+return $logger;

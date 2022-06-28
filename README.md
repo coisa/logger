@@ -1,11 +1,15 @@
-# CoiSA Logger - [Twelve-Factor](https://12factor.net/logs) PSR-3 Logger
+# CoiSA Logger - Twelve-Factor PSR-3 Logger
 
 [![PHP Version][ico-php]][link-packagist]
 [![Latest Version on Packagist][ico-version]][link-packagist]
 [![Software License][ico-license]](LICENSE)
 [![Total Downloads][ico-downloads]][link-downloads]
 
-## Install
+`coisa/logger` is a [PSR-3 Logger](https://www.php-fig.org/psr/psr-3/) implementation that uses the [Monolog](https://seldaek.github.io/monolog/) to create a [Twelve-Factor Logger](https://12factor.net/logs).
+
+## Installation
+
+### Using composer
 
 ```sh
 $ composer require coisa/logger
