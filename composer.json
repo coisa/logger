@@ -18,6 +18,7 @@
     "require-dev": {
         "coisa/php-cs-fixer": "^2.1",
         "container-interop/service-provider": "^0.4.0",
+        "illuminate/support": "^8.83",
         "laminas/laminas-servicemanager": "^3.12",
         "php-parallel-lint/php-console-highlighter": "^1.0",
         "php-parallel-lint/php-parallel-lint": "^1.3",
