@@ -31,6 +31,6 @@ final class LaravelServiceProvider extends ServiceProvider
     {
         $this->app->alias('logger', LoggerInterface::class);
         $this->app->alias(LoggerInterface::class, Logger::class);
-        $this->app->singleton(Logger::class, [LoggerFactory::class, 'createLogger']);
+        $this->app->singleton(Logger::class, new LoggerFactory());
     }
 }
