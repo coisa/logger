@@ -48,7 +48,8 @@ final class Logger extends AbstractLogger
             new MemoryPeakUsageProcessor(),
             new IntrospectionProcessor(MologLogger::DEBUG, [
                 __NAMESPACE__,
-                'Psr\Log\\',
+                'Psr\\Log\\',
+                'CoiSA\\',
             ]),
         ];
 
