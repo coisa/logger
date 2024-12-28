@@ -2,60 +2,73 @@
 
 declare(strict_types=1);
 
-/**
- * This file is part of coisa/logger.
- *
- * This source file is subject to the license that is bundled
- * with this source code in the file LICENSE.
- *
- * @link      https://github.com/coisa/logger
- * @link      https://12factor.net/logs
- *
- * @copyright Copyright (c) 2022-2024 Felipe Sayão Lobato Abreu <github@mentor.dev.br>
- * @license   https://opensource.org/licenses/MIT MIT License
- */
-
 namespace CoiSA\Logger;
 
-use Monolog\Handler\StreamHandler;
-use Monolog\Logger as MologLogger;
-use Monolog\Processor\IntrospectionProcessor;
-use Monolog\Processor\MemoryPeakUsageProcessor;
-use Monolog\Processor\MemoryUsageProcessor;
-use Monolog\Processor\ProcessIdProcessor;
-use Monolog\Processor\PsrLogMessageProcessor;
-use Monolog\Processor\UidProcessor;
-use Monolog\Processor\WebProcessor;
+use Monolog\Handler\AbstractHandler;
+use Monolog\Logger as MonologLogger;
 use Psr\Log\AbstractLogger;
-use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 
+/**
+ * Class Logger
+ *
+ * A PSR-3 compliant logger that wraps around Monolog.
+ *
+ * This class MUST handle logging operations following PSR-3 standards,
+ * SHALL support dynamic log level configuration, and ensure proper
+ * initialization of handlers and processors.
+ */
 final class Logger extends AbstractLogger
 {
-    private LoggerInterface $logger;
+    /**
+     * Constructs a Logger instance.
+     *
+     * This constructor SHALL ensure the logger is properly configured.
+     *
+     * @param MonologLogger $logger The Monolog logger instance.
+     */
+    public function __construct(
+        private MonologLogger $logger,
+    ) {}
 
-    public function __construct(?\DateTimeZone $timezone = null)
+    /**
+     * Updates the logging level of the primary StreamHandler.
+     *
+     * This method SHALL ensure the StreamHandler is updated with the
+     * specified log level dynamically.
+     *
+     * @param string $level The new log level (e.g., DEBUG, INFO).
+     *
+     * @return self A new instance of the Logger with the updated level.
+     */
+    public function withLevel(string $level = LogLevel::DEBUG): self
     {
-        $handlers = [
-            new StreamHandler('php://stdout'),
-        ];
+        $logger = clone $this;
+        $handlers = $logger->logger->getHandlers();
 
-        $processors = [
-            new PsrLogMessageProcessor(),
-            new UidProcessor(),
-            new ProcessIdProcessor(),
-            new WebProcessor(),
-            new MemoryUsageProcessor(),
-            new MemoryPeakUsageProcessor(),
-            new IntrospectionProcessor(MologLogger::DEBUG, [
-                __NAMESPACE__,
-                'Psr\\Log\\',
-                'CoiSA\\',
-            ]),
-        ];
+        foreach ($handlers as $handler) {
+            if (!$handler instanceof AbstractHandler) {
+                continue;
+            }
 
-        $this->logger = new MologLogger((string) gethostname(), $handlers, $processors, $timezone);
+            $handler->setLevel($level);
+        }
+
+        return $logger;
     }
 
+    /**
+     * Logs with an arbitrary level.
+     *
+     * This method MUST forward the log level, message, and context
+     * to the underlying Monolog instance.
+     *
+     * @param mixed $level The log level (e.g., DEBUG, INFO, WARNING).
+     * @param string $message The log message.
+     * @param array $context Contextual data for the log entry.
+     *
+     * @return void
+     */
     public function log($level, $message, array $context = []): void
     {
         $this->logger->log($level, $message, $context);

@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 namespace CoiSA\Logger;
 
+use Psr\EventDispatcher\StoppableEventInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -60,7 +61,7 @@ final class LogEventListener
      */
     public function __construct(?LoggerInterface $logger = null, ?string $message = null)
     {
-        $this->logger  = $logger ?? new NullLogger();
+        $this->logger  = $logger ?? LoggerFactory::createLogger();
         $this->message = $message ?? self::DEFAULT_MESSAGE;
     }
 
@@ -71,9 +72,15 @@ final class LogEventListener
      * and logs the event object with the configured message template.
      *
      * @param object $event the event object to log
+     *
+     * @return object the event object
      */
-    public function __invoke(object $event): void
+    public function __invoke(object $event): object
     {
+        if ($event instanceof StoppableEventInterface && $event->isPropagationStopped()) {
+            return $event;
+        }
+
         $name = \get_class($event);
 
         if (method_exists($event, 'getName')) {
@@ -81,5 +88,7 @@ final class LogEventListener
         }
 
         $this->logger->info($this->message, compact('name', 'event'));
+
+        return $event;
     }
 }

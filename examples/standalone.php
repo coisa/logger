@@ -21,5 +21,16 @@ require_once dirname(__DIR__) . '/vendor/autoload.php';
 
 $logger = LoggerFactory::createLogger();
 $logger->info('Hello World!', ['key' => uniqid('key'), 'name' => uniqid('name')]);
+$logger->info('Hello World!', ['timer' => ['test' => 'start'], 'key' => uniqid('key'), 'name' => uniqid('name')]);
+sleep(1);
+$logger->info('Hello World!', ['timer' => ['test2' => 'start'], 'key' => uniqid('key'), 'name' => uniqid('name')]);
+sleep(2);
+$logger->info('Hello World!', ['timer' => ['test' => 'start'], 'key' => uniqid('key'), 'name' => uniqid('name')]);
+sleep(1);
+$logger->info('Hello World!', ['key' => uniqid('key'), 'name' => uniqid('name')]);
+$logger->info('Hello World!', ['timer' => ['test' => 'stop'], 'key' => uniqid('key'), 'name' => uniqid('name')]);
+sleep(1);
+$logger->info('Hello World!', ['timer' => ['test2' => 'stop'], 'key' => uniqid('key'), 'name' => uniqid('name')]);
+$logger->info('Hello World!', ['timer' => ['test' => 'start'], 'key' => uniqid('key'), 'name' => uniqid('name')]);
 
 return $logger;
