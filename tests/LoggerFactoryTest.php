@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CoiSA\Logger;
 
 use CoiSA\Logger\Enum\LogLevel as ConfiguredLogLevel;
+use CoiSA\Logger\Handler\FileOperations;
 use CoiSA\Logger\Support\MemoryLogStream;
 use FastForward\Config\ConfigInterface;
 use PHPUnit\Framework\TestCase;
@@ -202,6 +203,99 @@ final class LoggerFactoryTest extends TestCase
     public function testStaticDefaultsRemainAvailable(): void
     {
         self::assertInstanceOf(LoggerInterface::class, LoggerFactory::createLogger());
+    }
+
+    /** Verifies disabled logging skips timezone resolution and cannot emit records. */
+    public function testDisabledLoggerPreservesConcreteServiceWithoutOutput(): void
+    {
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with(LoggerConfig::class)->willReturn(
+            $this->configuration(['enabled' => false, 'filename' => self::DESTINATION]),
+        );
+        $container->expects(self::never())->method('has');
+        $logger = (new LoggerFactory())($container);
+        self::assertInstanceOf(Logger::class, $logger);
+        $logger->emergency('must not be written');
+        self::assertSame('', MemoryLogStream::$records);
+    }
+
+    /** Verifies the selected formatter and processor opt-out in a memory-only sink. */
+    public function testJsonWithNoProcessorsDoesNotAddMetadata(): void
+    {
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with(LoggerConfig::class)->willReturn(
+            $this->configuration([
+                'filename' => self::DESTINATION, 'processors' => [], 'formatter' => 'json', 'timezone' => 'UTC',
+            ]),
+        );
+        $logger = (new LoggerFactory())($container);
+        $logger->info('unit {job}', ['job' => 'synthetic']);
+        $record = json_decode(MemoryLogStream::$records, true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('unit {job}', $record['message']);
+        self::assertSame(['job' => 'synthetic'], $record['context']);
+        self::assertSame([], $record['extra']);
+        self::assertArrayNotHasKey('trace', $record);
+    }
+
+    /** Verifies explicit interpolation can be selected without unrelated metadata processors. */
+    public function testSelectedProcessorInterpolatesOnlyRequestedContext(): void
+    {
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with(LoggerConfig::class)->willReturn(
+            $this->configuration([
+                'filename' => self::DESTINATION, 'processors' => ['psr_message'],
+                'formatter' => 'json', 'timezone' => 'UTC',
+            ]),
+        );
+        (new LoggerFactory())($container)->info('unit {job}', ['job' => 'synthetic']);
+        $record = json_decode(MemoryLogStream::$records, true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('unit synthetic', $record['message']);
+        self::assertSame([], $record['extra']);
+    }
+
+    /** Verifies file-only configuration uses the secure boundary and metadata-free constant channel. */
+    public function testFileOnlyWiringWritesJsonThroughPrivateHandler(): void
+    {
+        $operations = $this->createMock(FileOperations::class);
+        $metadata = ['mode' => 0100600, 'nlink' => 1, 'dev' => 1, 'ino' => 2];
+        $operations->method('canonicalize')->with('0')->willReturn('/owned/0');
+        $operations->method('parentMetadata')->willReturn(['mode' => 0040700]);
+        $operations->method('metadata')->willReturn($metadata);
+        $operations->method('descriptorMetadata')->willReturn($metadata);
+        $operations->method('open')->willReturn(new \stdClass());
+        $operations->method('restrict')->willReturn(true);
+        $operations->method('lock')->willReturn(true);
+        $bytes = '';
+        $operations->expects(self::once())->method('append')->willReturnCallback(
+            static function ($stream, string $data) use (&$bytes): int {
+                $bytes .= $data;
+                return strlen($data);
+            },
+        );
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with(LoggerConfig::class)->willReturn(
+            $this->configuration(['file_only' => true, 'filename' => '0', 'formatter' => 'json', 'timezone' => 'UTC']),
+        );
+        (new LoggerFactory($operations))($container)->info('synthetic file record');
+        $record = json_decode($bytes, true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('application', $record['channel']);
+        self::assertSame('synthetic file record', $record['message']);
+        self::assertSame([], $record['extra']);
+        self::assertSame('', MemoryLogStream::$records);
+    }
+
+    /** Verifies an optional destination missing from file-only settings creates no sink and resolves no fallback. */
+    public function testMissingFileOnlyDestinationHasNoSideEffects(): void
+    {
+        $operations = $this->createMock(FileOperations::class);
+        $operations->expects(self::never())->method('canonicalize');
+        $operations->expects(self::never())->method('open');
+        $operations->expects(self::never())->method('append');
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with(LoggerConfig::class)->willReturn($this->configuration(['file_only' => true]));
+        $container->expects(self::never())->method('has');
+        (new LoggerFactory($operations))($container)->emergency('disabled optional file');
+        self::assertSame('', MemoryLogStream::$records);
     }
 
     /**

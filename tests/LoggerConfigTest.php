@@ -41,6 +41,86 @@ final class LoggerConfigTest extends TestCase
         self::assertNull($config->timezone);
     }
 
+    /** Verifies opt-in file-only defaults cannot fall back to console output. */
+    public function testFileOnlyWithoutDestinationDisablesLogging(): void
+    {
+        $config = $this->configuration(['file_only' => true]);
+        self::assertFalse($config->enabled);
+        self::assertSame('', $config->filename);
+        self::assertSame([], $config->processors);
+    }
+
+    /** Verifies a zero filename is not mistaken for a disabled destination. */
+    public function testZeroFilenameRemainsEnabled(): void
+    {
+        $config = $this->configuration(['file_only' => true, 'filename' => '0']);
+        self::assertTrue($config->enabled);
+        self::assertSame('0', $config->filename);
+    }
+
+    /**
+     * Verifies null or blank file-only destinations cannot enable a stdout fallback.
+     *
+     * @dataProvider disabledDestinations
+     * @param mixed $filename The optional configured destination.
+     */
+    public function testOptionalFileDestinations(mixed $filename): void
+    {
+        $config = $this->configuration(['file_only' => true, 'filename' => $filename, 'enabled' => true]);
+        self::assertFalse($config->enabled);
+        self::assertSame('', $config->filename);
+    }
+
+    /** @return list<array{mixed}> Values representing absent destinations. */
+    public static function disabledDestinations(): array
+    {
+        return [[null], [''], ['  ']];
+    }
+
+    /** Verifies readonly typed configuration exposes the selected finite values. */
+    public function testProcessorAndFormatterSelectionsAreTyped(): void
+    {
+        $config = $this->configuration(['processors' => ['psr_message'], 'formatter' => 'json']);
+        self::assertSame([\CoiSA\Logger\Enum\Processor::PSR_MESSAGE], $config->processors);
+        self::assertSame(\CoiSA\Logger\Enum\Formatter::JSON, $config->formatter);
+    }
+
+    /** Verifies legacy defaults and explicit processor opt-out remain distinct. */
+    public function testNewOptionsPreserveLegacyDefaults(): void
+    {
+        $config = $this->configuration([]);
+        self::assertTrue($config->enabled);
+        self::assertFalse($config->fileOnly);
+        self::assertNull($config->processors);
+        self::assertSame([], $this->configuration(['processors' => []])->processors);
+    }
+
+    /**
+     * Verifies opt-in settings fail closed before filesystem access.
+     *
+     * @dataProvider invalidNewOptions
+     * @param array<string, mixed> $options Invalid values.
+     */
+    public function testInvalidNewSettings(array $options): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->configuration($options);
+    }
+
+    /** @return list<array{array<string, mixed>}> Invalid opt-in values. */
+    public static function invalidNewOptions(): array
+    {
+        return [
+            [['enabled' => 'false']], [['file_only' => 1]],
+            [['file_only' => true, 'filename' => 'php://stdout']],
+            [['file_only' => true, 'filename' => 'file:///tmp/debug']],
+            [['processors' => ['Unknown\\Processor']]], [['processors' => 'psr_message']],
+            [['processors' => ['psr_message', 'psr_message']]], [['processors' => [false]]],
+            [['processors' => [0 => 'psr_message', 2 => 'psr_message']]],
+            [['formatter' => 'xml']],
+        ];
+    }
+
     /**
      * Verifies canonical strings against independently specified enum cases.
      *

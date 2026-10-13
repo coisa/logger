@@ -18,6 +18,8 @@ declare(strict_types=1);
 namespace CoiSA\Logger;
 
 use CoiSA\Logger\Enum\LogLevel;
+use CoiSA\Logger\Enum\Formatter;
+use CoiSA\Logger\Enum\Processor;
 use FastForward\Config\ConfigInterface;
 
 /**
@@ -38,7 +40,7 @@ final readonly class LoggerConfig
     public LogLevel $level;
 
     /**
-     * @var non-empty-string The validated output path or stream.
+     * @var string The output path/stream, or empty for disabled file-only logging.
      */
     public string $filename;
 
@@ -47,18 +49,36 @@ final readonly class LoggerConfig
      */
     public ?\DateTimeZone $timezone;
 
+    /** @var bool Whether records may reach any sink. */
+    public bool $enabled;
+
+    /** @var bool Whether only a private regular local file is allowed. */
+    public bool $fileOnly;
+
+    /** @var list<Processor>|null Selected processors, or null for legacy defaults. */
+    public ?array $processors;
+
+    /** @var Formatter The selected record representation. */
+    public Formatter $formatter;
+
     /**
      * Constructs a validated snapshot from the optional logger section.
      *
-     * @param ConfigInterface $config Configuration containing level, filename and timezone settings.
+     * @param ConfigInterface $config The optional logger section, including sink and processor options.
      *
      * @throws \InvalidArgumentException When the section or a non-null setting is invalid.
      */
     public function __construct(ConfigInterface $config)
     {
         $options = self::resolveOptions($config);
+        $this->fileOnly = self::resolveBoolean($options['file_only'] ?? false, 'file_only');
         $this->level = self::resolveLevel($options['level'] ?? LogLevel::DEBUG->value);
-        $this->filename = self::resolveFilename($options['filename'] ?? self::DEFAULT_FILENAME);
+        $filename = $options['filename'] ?? ($this->fileOnly ? '' : self::DEFAULT_FILENAME);
+        $this->filename = self::resolveFilename($filename, $this->fileOnly);
+        $this->enabled = self::resolveBoolean($options['enabled'] ?? true, 'enabled')
+            && (!$this->fileOnly || $this->filename !== '');
+        $this->processors = self::resolveProcessors($options['processors'] ?? ($this->fileOnly ? [] : null));
+        $this->formatter = self::resolveFormatter($options['formatter'] ?? Formatter::TEXT->value);
         $this->timezone = self::resolveTimezone($options['timezone'] ?? null);
     }
 
@@ -108,19 +128,82 @@ final readonly class LoggerConfig
      *
      * @param mixed $filename The non-null destination after applying the default.
      *
-     * @return non-empty-string The validated destination.
+     * @param bool $fileOnly Whether blank destinations disable logging and streams are forbidden.
      *
-     * @throws \InvalidArgumentException When the value is not a non-empty string without NUL bytes.
+     * @return string The destination, or empty for disabled file-only logging.
+     *
+     * @throws \InvalidArgumentException When the destination type, contents or file-only scheme is invalid.
      */
-    private static function resolveFilename(mixed $filename): string
+    private static function resolveFilename(mixed $filename, bool $fileOnly): string
     {
-        if (!is_string($filename) || trim($filename) === '' || str_contains($filename, "\0")) {
+        if ($fileOnly && is_string($filename) && trim($filename) === '') {
+            return '';
+        }
+        if (
+            !is_string($filename) || trim($filename) === '' || str_contains($filename, "\0")
+            || ($fileOnly && preg_match('/^[a-z][a-z0-9+.-]*:/i', $filename))
+        ) {
             throw new \InvalidArgumentException(
                 'logger.filename must be a non-empty path or stream without NUL bytes.',
             );
         }
 
         return $filename;
+    }
+
+    /**
+     * Validates an explicit switch without coercing strings.
+     *
+     * @param mixed $value The normalized switch.
+     * @param string $key The diagnostic setting name.
+     * @return bool The validated switch.
+     * @throws \InvalidArgumentException When a non-null value is not boolean.
+     */
+    private static function resolveBoolean(mixed $value, string $key): bool
+    {
+        if (!is_bool($value)) {
+            throw new \InvalidArgumentException('logger.' . $key . ' must be boolean.');
+        }
+        return $value;
+    }
+
+    /**
+     * Validates a finite ordered processor selection.
+     *
+     * @param mixed $processors The selection, or null for legacy defaults.
+     * @return list<Processor>|null The normalized enum selection.
+     * @throws \InvalidArgumentException When IDs, list shape or duplicates are invalid.
+     */
+    private static function resolveProcessors(mixed $processors): ?array
+    {
+        if ($processors === null) {
+            return null;
+        }
+        if (!is_array($processors) || !array_is_list($processors)) {
+            throw new \InvalidArgumentException('logger.processors must be a list of supported identifiers.');
+        }
+        $result = [];
+        foreach ($processors as $id) {
+            $processor = is_string($id) ? Processor::tryFrom($id) : null;
+            if ($processor === null || in_array($processor, $result, true)) {
+                throw new \InvalidArgumentException('logger.processors contains an unknown or duplicate identifier.');
+            }
+            $result[] = $processor;
+        }
+        return $result;
+    }
+
+    /**
+     * Validates the finite output format.
+     *
+     * @param mixed $formatter The normalized format setting.
+     * @return Formatter The selected formatter.
+     * @throws \InvalidArgumentException When the value is not text or json.
+     */
+    private static function resolveFormatter(mixed $formatter): Formatter
+    {
+        return (is_string($formatter) ? Formatter::tryFrom($formatter) : null)
+            ?? throw new \InvalidArgumentException('logger.formatter must be text or json.');
     }
 
     /**

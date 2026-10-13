@@ -18,6 +18,12 @@ declare(strict_types=1);
 namespace CoiSA\Logger;
 
 use CoiSA\Logger\Enum\LogLevel as ConfiguredLogLevel;
+use CoiSA\Logger\Enum\Formatter;
+use CoiSA\Logger\Enum\Processor;
+use CoiSA\Logger\Handler\FileOperations;
+use CoiSA\Logger\Handler\PrivateFileHandler;
+use Monolog\Formatter\JsonFormatter;
+use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger as MonologLogger;
 use Monolog\Processor\LoadAverageProcessor;
@@ -49,6 +55,15 @@ use Psr\Log\LogLevel;
 final class LoggerFactory
 {
     /**
+     * Supplies the local-file operations boundary without accessing the filesystem.
+     *
+     * @param FileOperations $fileOperations Native operations used only by enabled file-only sinks.
+     */
+    public function __construct(private readonly FileOperations $fileOperations = new FileOperations())
+    {
+    }
+
+    /**
      * Invokes the factory to create a logger instance.
      *
      * The provider MUST register LoggerConfig. A container timezone SHALL be
@@ -66,11 +81,22 @@ final class LoggerFactory
         if (!$config instanceof LoggerConfig) {
             throw new \InvalidArgumentException('The logger configuration service must be a LoggerConfig instance.');
         }
-        return self::createLogger(
-            level: $config->level,
-            filename: $config->filename,
+        if (!$config->enabled) {
+            return new Logger(new MonologLogger('application', [new NullHandler()]));
+        }
+        $handler = $config->fileOnly
+            ? new PrivateFileHandler($config->filename, $config->level->value, $this->fileOperations)
+            : new StreamHandler($config->filename, $config->level->value);
+        if ($config->formatter === Formatter::JSON) {
+            $handler->setFormatter(new JsonFormatter(includeStacktraces: false));
+        }
+        return new Logger(new MonologLogger(
+            name: $config->fileOnly ? 'application' : (string) gethostname(),
+            handlers: [$handler],
+            processors: $config->processors === null ? self::getDefaultProcessors()
+                : array_map(self::createProcessor(...), $config->processors),
             timezone: $config->timezone ?? $this->resolveContainerTimezone($container),
-        );
+        ));
     }
 
     /**
@@ -206,5 +232,33 @@ final class LoggerFactory
             new LoadAverageProcessor(),
             new StopwatchTimerProcessor(),
         ];
+    }
+
+    /**
+     * Instantiates only an explicitly allowlisted processor.
+     *
+     * @param Processor $processor The normalized configured identifier.
+     * @return ProcessorInterface The selected processor.
+     */
+    private static function createProcessor(Processor $processor): ProcessorInterface
+    {
+        return match ($processor) {
+            Processor::PSR_MESSAGE => new PsrLogMessageProcessor(),
+            Processor::SAPI_NAME => new SapiNameProcessor(),
+            Processor::PROCESS_ID => new ProcessIdProcessor(),
+            Processor::UID => new UidProcessor(),
+            Processor::UUID => new UuidProcessor(),
+            Processor::PROTOCOL_VERSION => new ProtocolVersionProcessor(),
+            Processor::SESSION_ID => new SessionIdProcessor(),
+            Processor::REQUEST_SIZE => new RequestSizeProcessor(),
+            Processor::CLIENT_IP => new ClientIpProcessor(),
+            Processor::IS_HTTPS => new IsHttpsProcessor(),
+            Processor::WEB => new WebProcessor(),
+            Processor::BACKTRACE => new BacktraceProcessor(),
+            Processor::MEMORY_USAGE => new MemoryUsageProcessor(),
+            Processor::MEMORY_PEAK_USAGE => new MemoryPeakUsageProcessor(),
+            Processor::LOAD_AVERAGE => new LoadAverageProcessor(),
+            Processor::STOPWATCH_TIMER => new StopwatchTimerProcessor(),
+        };
     }
 }
