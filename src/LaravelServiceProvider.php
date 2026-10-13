@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * This file is part of coisa/logger.
  *
@@ -15,20 +13,28 @@ declare(strict_types=1);
  * @license   https://opensource.org/licenses/MIT MIT License
  */
 
+declare(strict_types=1);
+
 namespace CoiSA\Logger;
 
 use Illuminate\Support\ServiceProvider;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Registers shared logger configuration and logger services in a Laravel application.
+ */
 final class LaravelServiceProvider extends ServiceProvider
 {
     /**
      * Register any application services.
+     *
+     * @return void
      */
     public function register(): void
     {
         $this->app->alias('logger', LoggerInterface::class);
         $this->app->alias(LoggerInterface::class, Logger::class);
         $this->app->singleton(Logger::class, new LoggerFactory());
+        $this->app->singleton(LoggerConfig::class, new LoggerConfigFactory());
     }
 }

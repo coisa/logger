@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * This file is part of coisa/logger.
  *
@@ -15,12 +13,27 @@ declare(strict_types=1);
  * @license   https://opensource.org/licenses/MIT MIT License
  */
 
+declare(strict_types=1);
+
 namespace CoiSA\Logger;
 
 use Psr\Log\LoggerInterface;
 
+/**
+ * Declares Laminas-compatible logger and configuration service registrations.
+ */
 final class ConfigProvider
 {
+    /**
+     * Exports the dependency registry without resolving its factories.
+     *
+     * @return array{
+     *     dependencies: array{
+     *         aliases: array<string, class-string>,
+     *         factories: array<class-string, class-string>
+     *     }
+     * }
+     */
     public function __invoke(): array
     {
         return [
@@ -28,6 +41,11 @@ final class ConfigProvider
         ];
     }
 
+    /**
+     * Describes the dedicated configuration factory alongside logger aliases.
+     *
+     * @return array{aliases: array<string, class-string>, factories: array<class-string, class-string>}
+     */
     public function getDependencies(): array
     {
         return [
@@ -37,6 +55,7 @@ final class ConfigProvider
             ],
             'factories' => [
                 Logger::class => LoggerFactory::class,
+                LoggerConfig::class => LoggerConfigFactory::class,
             ],
         ];
     }
