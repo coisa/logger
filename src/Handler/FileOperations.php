@@ -34,6 +34,7 @@ class FileOperations
      */
     public function canonicalize(string $filename): string
     {
+        clearstatcache(true);
         $parent = realpath(dirname($filename));
         if ($parent === false) {
             throw new \UnexpectedValueException('The private log parent directory must already exist.');
