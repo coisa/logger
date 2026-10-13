@@ -4,228 +4,234 @@ declare(strict_types=1);
 
 namespace CoiSA\Logger;
 
-use FastForward\Config\ArrayConfig;
+use CoiSA\Logger\Enum\LogLevel as ConfiguredLogLevel;
+use CoiSA\Logger\Support\MemoryLogStream;
 use FastForward\Config\ConfigInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Unit tests of container composition and static creation with an in-memory stream spy.
+ *
+ * @coversDefaultClass \CoiSA\Logger\LoggerFactory
+ */
 final class LoggerFactoryTest extends TestCase
 {
-    private string $filename;
+    private const DESTINATION = 'coisalogunit://records';
 
+    /** @var bool Whether this test owns the registered spy protocol. */
+    private bool $registered = false;
+
+    /**
+     * Installs an isolated memory stream instead of real console or file IO.
+     *
+     * @return void
+     */
     protected function setUp(): void
     {
-        $filename = tempnam(sys_get_temp_dir(), 'coisa-logger-test-');
-        self::assertIsString($filename);
-        $this->filename = $filename;
+        MemoryLogStream::$records = '';
+        $this->registered = stream_wrapper_register('coisalogunit', MemoryLogStream::class);
+        self::assertTrue($this->registered);
     }
 
+    /**
+     * Removes only the protocol installed by the current test.
+     *
+     * @return void
+     */
     protected function tearDown(): void
     {
-        unlink($this->filename);
-    }
-
-    public function testFactoryRemainsUsableWithoutConfig(): void
-    {
-        self::assertInstanceOf(LoggerInterface::class, (new LoggerFactory())($this->container()));
-    }
-
-    public function testAbsentAndEmptyConfigPreserveStdoutDebugDefaults(): void
-    {
-        foreach ([false, true] as $configured) {
-            $script = 'require "vendor/autoload.php"; '
-                . '$container = new class implements \\Psr\\Container\\ContainerInterface {'
-                . ' public function has(string $id): bool { return '
-                . ($configured ? '$id === \\FastForward\\Config\\ConfigInterface::class' : 'false') . '; }'
-                . ' public function get(string $id): mixed { return new \\FastForward\\Config\\ArrayConfig([]); }'
-                . '}; (new \\CoiSA\\Logger\\LoggerFactory())($container)->debug("default-stream-marker");';
-            $process = proc_open([PHP_BINARY, '-r', $script], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-            self::assertIsResource($process);
-            $stdout = stream_get_contents($pipes[1]);
-            $stderr = stream_get_contents($pipes[2]);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
-            self::assertSame(0, proc_close($process));
-            self::assertStringContainsString('default-stream-marker', $stdout);
-            self::assertSame('', $stderr);
+        if ($this->registered) {
+            stream_wrapper_unregister('coisalogunit');
         }
+        MemoryLogStream::$records = '';
     }
 
-    public function testInvalidContainerTimezoneFailsClearly(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('container timezone');
-        (new LoggerFactory())($this->container([\DateTimeZone::class => new \stdClass()]));
-    }
-
-    public function testNulContainerTimezoneFailsClearly(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('logger.timezone');
-        (new LoggerFactory())($this->container([\DateTimeZone::class => "UTC\0invalid"]));
-    }
-
-    public function testUnrelatedConfigIsAccepted(): void
-    {
-        $logger = (new LoggerFactory())($this->container([ConfigInterface::class => new ArrayConfig([
-            'application' => ['name' => 'synthetic'],
-            'logger' => ['level' => 'error', 'filename' => $this->filename],
-        ])]));
-        $logger->warning('filtered marker');
-        $logger->error('visible marker');
-        self::assertStringNotContainsString('filtered marker', file_get_contents($this->filename));
-        self::assertStringContainsString('visible marker', file_get_contents($this->filename));
-    }
-
-    /** @dataProvider canonicalLevels */
-    public function testCanonicalLevelsAreAccepted(string $level): void
-    {
-        $logger = $this->configured(['level' => $level, 'filename' => $this->filename]);
-        $logger->log($level, 'canonical level marker');
-        self::assertStringContainsString('canonical level marker', file_get_contents($this->filename));
-    }
-
-    public static function canonicalLevels(): array
-    {
-        return [
-            ['debug'], ['info'], ['notice'], ['warning'],
-            ['error'], ['critical'], ['alert'], ['emergency'],
-        ];
-    }
-
-    public function testDirectFactoryStillAcceptsUppercaseLevel(): void
-    {
-        $logger = LoggerFactory::createLogger(level: 'ERROR', filename: $this->filename);
-        $logger->warning('hidden uppercase');
-        $logger->error('visible uppercase');
-        self::assertStringNotContainsString('hidden uppercase', file_get_contents($this->filename));
-        self::assertStringContainsString('visible uppercase', file_get_contents($this->filename));
-    }
-
-    public function testPartialConfigUsesDebugLevelAndContainerTimezone(): void
-    {
-        $logger = $this->configured(['filename' => $this->filename], new \DateTimeZone('Pacific/Kiritimati'));
-        $logger->debug('partial {value}', ['value' => 'configured']);
-        $output = file_get_contents($this->filename);
-        self::assertStringContainsString('partial configured', $output);
-        self::assertStringContainsString('+14:00', $output);
-    }
-
-    public function testConfigControlsFileLevelAndOverridesContainerTimezone(): void
-    {
-        $logger = $this->configured([
-            'filename' => $this->filename,
-            'level' => 'warning',
-            'timezone' => 'Pacific/Kiritimati',
-        ], new \DateTimeZone('UTC'));
-        $logger->debug('filtered marker');
-        $logger->warning('visible marker');
-        $output = file_get_contents($this->filename);
-        self::assertStringNotContainsString('filtered marker', $output);
-        self::assertStringContainsString('visible marker', $output);
-        self::assertStringContainsString('+14:00', $output);
-    }
-
-    public function testTimezoneObjectIsAccepted(): void
-    {
-        $logger = $this->configured([
-            'filename' => $this->filename,
-            'timezone' => new \DateTimeZone('Pacific/Kiritimati'),
-        ]);
-        $logger->info('timezone object');
-        self::assertStringContainsString('+14:00', file_get_contents($this->filename));
-    }
-
-    /** @dataProvider timezoneOverrides */
-    public function testExplicitTimezoneDoesNotResolveContainerTimezone(mixed $timezone): void
+    /**
+     * Verifies consumption of the registered value without constructing another service.
+     *
+     * @covers ::__invoke
+     */
+    public function testConsumesRegisteredConfiguration(): void
     {
         $container = $this->createMock(ContainerInterface::class);
-        $container->expects(self::once())->method('has')->with(ConfigInterface::class)->willReturn(true);
-        $container->expects(self::once())->method('get')->with(ConfigInterface::class)->willReturn(new ArrayConfig([
-            'logger' => ['filename' => $this->filename, 'timezone' => $timezone],
-        ]));
+        $container->expects(self::once())->method('get')->with(LoggerConfig::class)
+            ->willReturn($this->configuration([]));
+        $container->expects(self::once())->method('has')->with(\DateTimeZone::class)->willReturn(false);
         self::assertInstanceOf(LoggerInterface::class, (new LoggerFactory())($container));
     }
 
-    public static function timezoneOverrides(): array
+    /**
+     * Verifies that an incorrectly registered configuration fails closed.
+     *
+     * @covers ::__invoke
+     */
+    public function testInvalidConfigurationService(): void
     {
-        return [[null], ['UTC'], [new \DateTimeZone('UTC')]];
-    }
-
-    /** @dataProvider invalidConfiguration */
-    public function testInvalidConfigurationFailsClearly(mixed $options, string $message): void
-    {
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with(LoggerConfig::class)->willReturn(null);
+        $container->expects(self::never())->method('has');
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage($message);
-        (new LoggerFactory())($this->container([ConfigInterface::class => new ArrayConfig(['logger' => $options])]));
+        $this->expectExceptionMessage('LoggerConfig');
+        (new LoggerFactory())($container);
     }
 
-    public static function invalidConfiguration(): array
+    /**
+     * Verifies that non-null configuration skips all fallback-service resolution.
+     *
+     * @param string|\DateTimeZone $timezone The explicit configured timezone.
+     *
+     * @covers ::__invoke
+     * @dataProvider configuredTimezones
+     */
+    public function testConfiguredTimezoneSkipsContainerFallback(string|\DateTimeZone $timezone): void
+    {
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects(self::once())->method('get')->with(LoggerConfig::class)
+            ->willReturn($this->configuration(['timezone' => $timezone]));
+        $container->expects(self::never())->method('has');
+        self::assertInstanceOf(LoggerInterface::class, (new LoggerFactory())($container));
+    }
+
+    /**
+     * Supplies explicit timezone values.
+     *
+     * @return list<array{string|\DateTimeZone}> Supported values.
+     */
+    public static function configuredTimezones(): array
+    {
+        return [['UTC'], [new \DateTimeZone('UTC')]];
+    }
+
+    /**
+     * Verifies that both null and absent configuration allow nullable legacy service values.
+     *
+     * @param mixed $fallback A supported container timezone value.
+     * @param array<array-key, mixed> $options The logger settings.
+     *
+     * @covers ::__invoke
+     * @dataProvider timezoneFallbacks
+     */
+    public function testLazyContainerTimezoneFallback(mixed $fallback, array $options): void
+    {
+        $config = $this->configuration($options + ['filename' => self::DESTINATION]);
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects(self::once())->method('has')->with(\DateTimeZone::class)->willReturn(true);
+        $container->expects(self::exactly(2))->method('get')->willReturnMap([
+            [LoggerConfig::class, $config],
+            [\DateTimeZone::class, $fallback],
+        ]);
+        (new LoggerFactory())($container)->debug('fallback marker');
+        self::assertStringContainsString('fallback marker', MemoryLogStream::$records);
+        if ($fallback !== null) {
+            self::assertStringContainsString('+14:00', MemoryLogStream::$records);
+        }
+    }
+
+    /**
+     * Provides missing/null settings with accepted service values.
+     *
+     * @return list<array{mixed, array<array-key, mixed>}> Fallback and settings.
+     */
+    public static function timezoneFallbacks(): array
     {
         return [
-            'section' => ['invalid', 'logger must be an array'],
-            'level type' => [['level' => 100], 'logger.level'],
-            'unknown level' => [['level' => 'verbose'], 'logger.level'],
-            'uppercase level' => [['level' => 'ERROR'], 'logger.level'],
-            'mixed-case level' => [['level' => 'Error'], 'logger.level'],
-            'empty level' => [['level' => ''], 'logger.level'],
-            'null level' => [['level' => null], 'logger.level'],
-            'filename type' => [['filename' => false], 'logger.filename'],
-            'empty filename' => [['filename' => ''], 'logger.filename'],
-            'blank filename' => [['filename' => '  '], 'logger.filename'],
-            'NUL filename' => [['filename' => "bad\0path"], 'logger.filename'],
-            'timezone type' => [['timezone' => 42], 'logger.timezone'],
-            'unknown timezone' => [['timezone' => 'Not/AZone'], 'logger.timezone'],
-            'NUL timezone' => [['timezone' => "UTC\0invalid"], 'logger.timezone'],
+            [null, []], [null, ['timezone' => null]],
+            ['Pacific/Kiritimati', []], ['Pacific/Kiritimati', ['timezone' => null]],
+            [new \DateTimeZone('Pacific/Kiritimati'), []],
+            [new \DateTimeZone('Pacific/Kiritimati'), ['timezone' => null]],
         ];
     }
 
-    public function testInvalidConfigServiceFailsClearly(): void
+    /**
+     * Verifies malformed non-null service values produce clear diagnostics.
+     *
+     * @param mixed $fallback The invalid timezone value.
+     *
+     * @covers ::__invoke
+     * @dataProvider invalidFallbacks
+     */
+    public function testInvalidContainerTimezone(mixed $fallback): void
     {
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('has')->with(\DateTimeZone::class)->willReturn(true);
+        $container->method('get')->willReturnMap([
+            [LoggerConfig::class, $this->configuration([])],
+            [\DateTimeZone::class, $fallback],
+        ]);
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage(ConfigInterface::class);
-        (new LoggerFactory())($this->container([ConfigInterface::class => new \stdClass()]));
+        $this->expectExceptionMessage('logger.timezone');
+        (new LoggerFactory())($container);
     }
 
-    public function testProvidersResolveConfiguredLoggerThroughExistingAliases(): void
+    /**
+     * Supplies invalid container values.
+     *
+     * @return list<array{mixed}> Values requiring rejection.
+     */
+    public static function invalidFallbacks(): array
     {
-        $config = new ArrayConfig(['logger' => ['filename' => $this->filename, 'level' => 'error']]);
-        $provider = new ContainerInteropServiceProvider();
-        $factories = $provider->getFactories();
-        $logger = $factories[Logger::class]($this->container([ConfigInterface::class => $config]));
-        $container = $this->container([Logger::class => $logger, LoggerInterface::class => $logger]);
-        self::assertSame($logger, $factories[LoggerInterface::class]($container));
-        self::assertSame($logger, $factories['logger']($container));
-        self::assertSame([], $provider->getExtensions());
-
-        $dependencies = (new ConfigProvider())()['dependencies'];
-        $factory = new ($dependencies['factories'][Logger::class])();
-        $laminasLogger = $factory($this->container([ConfigInterface::class => $config]));
-        $laminasLogger->info('filtered provider');
-        $laminasLogger->error('visible provider');
-        self::assertStringNotContainsString('filtered provider', file_get_contents($this->filename));
-        self::assertStringContainsString('visible provider', file_get_contents($this->filename));
-        self::assertSame(LoggerInterface::class, $dependencies['aliases']['logger']);
-        self::assertSame(Logger::class, $dependencies['aliases'][LoggerInterface::class]);
+        return [[false], ['Not/AZone'], ["UTC\0bad"]];
     }
 
-    private function configured(array $options, ?\DateTimeZone $timezone = null): LoggerInterface
+    /**
+     * Verifies enum normalization and backward-compatible uppercase string levels.
+     *
+     * @covers ::createLogger
+     */
+    public function testStaticEnumAndLegacyStringHaveEquivalentThresholds(): void
     {
-        $services = [ConfigInterface::class => new ArrayConfig(['logger' => $options])];
-        if ($timezone !== null) {
-            $services[\DateTimeZone::class] = $timezone;
-        }
-
-        return (new LoggerFactory())($this->container($services));
+        $enum = LoggerFactory::createLogger(ConfiguredLogLevel::ERROR, self::DESTINATION);
+        $string = LoggerFactory::createLogger('ERROR', self::DESTINATION);
+        $enum->warning('hidden enum');
+        $string->warning('hidden string');
+        $enum->error('visible enum');
+        $string->error('visible string');
+        self::assertStringContainsString('visible enum', MemoryLogStream::$records);
+        self::assertStringContainsString('visible string', MemoryLogStream::$records);
+        self::assertStringNotContainsString('hidden enum', MemoryLogStream::$records);
+        self::assertStringNotContainsString('hidden string', MemoryLogStream::$records);
     }
 
-    private function container(array $services = []): ContainerInterface
+    /**
+     * Verifies the default creation API remains usable without opening its lazy destination.
+     *
+     * @covers ::createLogger
+     */
+    public function testStaticDefaultsRemainAvailable(): void
     {
-        $container = $this->createStub(ContainerInterface::class);
-        $container->method('has')->willReturnCallback(static fn (string $id): bool => array_key_exists($id, $services));
-        $container->method('get')->willReturnCallback(static fn (string $id): mixed => $services[$id]);
+        self::assertInstanceOf(LoggerInterface::class, LoggerFactory::createLogger());
+    }
 
-        return $container;
+    /**
+     * Verifies defaults for nullable level values through the configured logger.
+     *
+     * @covers ::__invoke
+     */
+    public function testNullLevelUsesDebugDefault(): void
+    {
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with(LoggerConfig::class)->willReturn(
+            $this->configuration(['level' => null, 'filename' => self::DESTINATION]),
+        );
+        $container->method('has')->with(\DateTimeZone::class)->willReturn(false);
+        (new LoggerFactory())($container)->debug('default debug marker');
+        self::assertStringContainsString('default debug marker', MemoryLogStream::$records);
+    }
+
+    /**
+     * Creates a validated value using a mocked source, not a concrete config backend.
+     *
+     * @param array<array-key, mixed> $options The source settings.
+     *
+     * @return LoggerConfig The immutable value returned by the mocked container.
+     */
+    private function configuration(array $options): LoggerConfig
+    {
+        $source = $this->createMock(ConfigInterface::class);
+        $source->expects(self::once())->method('get')->with('logger', [])->willReturn($options);
+
+        return new LoggerConfig($source);
     }
 }

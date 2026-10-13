@@ -17,8 +17,7 @@ declare(strict_types=1);
 
 namespace CoiSA\Logger;
 
-use FastForward\Config\ArrayConfig;
-use FastForward\Config\ConfigInterface;
+use CoiSA\Logger\Enum\LogLevel as ConfiguredLogLevel;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger as MonologLogger;
 use Monolog\Processor\LoadAverageProcessor;
@@ -52,41 +51,54 @@ final class LoggerFactory
     /**
      * Invokes the factory to create a logger instance.
      *
-     * Optional Fast Forward configuration overrides factory defaults. A
-     * container timezone is used only when logger.timezone is not configured.
+     * The provider MUST register LoggerConfig. A container timezone SHALL be
+     * resolved lazily when the normalized configuration timezone is null.
      *
      * @param ContainerInterface $container The dependency injection container.
      *
      * @return LoggerInterface The constructed Logger instance.
+     *
+     * @throws \InvalidArgumentException When configuration or a needed timezone fallback is invalid.
      */
     public function __invoke(ContainerInterface $container): LoggerInterface
     {
-        $config = new LoggerConfig($this->resolveConfig($container));
-        $timezone = !$config->hasTimezone() && $container->has(\DateTimeZone::class)
-            ? $container->get(\DateTimeZone::class)
-            : null;
-
+        $config = $container->get(LoggerConfig::class);
+        if (!$config instanceof LoggerConfig) {
+            throw new \InvalidArgumentException('The logger configuration service must be a LoggerConfig instance.');
+        }
         return self::createLogger(
-            level: $config->getLevel()->value,
-            filename: $config->getFilename(),
-            timezone: $config->getTimezone($timezone),
+            level: $config->level,
+            filename: $config->filename,
+            timezone: $config->timezone ?? $this->resolveContainerTimezone($container),
         );
     }
 
-    private function resolveConfig(ContainerInterface $container): ConfigInterface
+    /**
+     * Resolves and normalizes the legacy container timezone only when needed.
+     *
+     * @param ContainerInterface $container The container providing an optional DateTimeZone service.
+     *
+     * @return \DateTimeZone|null The fallback timezone, or null to use the process default.
+     *
+     * @throws \InvalidArgumentException When the timezone service is not a valid name, object or null.
+     */
+    private function resolveContainerTimezone(ContainerInterface $container): ?\DateTimeZone
     {
-        if (!$container->has(ConfigInterface::class)) {
-            return new ArrayConfig();
+        $timezone = $container->has(\DateTimeZone::class) ? $container->get(\DateTimeZone::class) : null;
+        if (is_string($timezone)) {
+            try {
+                $timezone = new \DateTimeZone($timezone);
+            } catch (\Exception | \ValueError $exception) {
+                throw new \InvalidArgumentException('logger.timezone must be a valid timezone name.', 0, $exception);
+            }
         }
-
-        $config = $container->get(ConfigInterface::class);
-        if (!$config instanceof ConfigInterface) {
+        if ($timezone !== null && !$timezone instanceof \DateTimeZone) {
             throw new \InvalidArgumentException(
-                'The config service must implement ' . ConfigInterface::class . '.',
+                'logger.timezone or the container timezone must be a DateTimeZone, timezone name or null.',
             );
         }
 
-        return $config;
+        return $timezone;
     }
 
     /**
@@ -95,20 +107,22 @@ final class LoggerFactory
      * This method SHALL configure a Logger with a specified logging level,
      * output stream, and timezone.
      *
-     * @param string $level The minimum logging level (e.g., DEBUG, INFO).
+     * @param string|ConfiguredLogLevel $level A legacy Monolog level string or a canonical PSR-3 enum.
      * @param string $filename The output stream or file path for logs.
      * @param \DateTimeZone|null $timezone The timezone for log timestamps.
      *
      * @return LoggerInterface The configured Logger instance.
+     *
+     * @throws \InvalidArgumentException When Monolog rejects the level or output stream.
      */
     public static function createLogger(
-        string $level = LogLevel::DEBUG,
-        string $filename = 'php://stdout',
+        string|ConfiguredLogLevel $level = LogLevel::DEBUG,
+        string $filename = LoggerConfig::DEFAULT_FILENAME,
         ?\DateTimeZone $timezone = null,
     ): LoggerInterface {
         $monolog = self::createMonologLogger(
             name: (string) gethostname(),
-            level: $level,
+            level: $level instanceof ConfiguredLogLevel ? $level->value : $level,
             filename: $filename,
             timezone: $timezone,
         );
@@ -132,7 +146,7 @@ final class LoggerFactory
     private static function createMonologLogger(
         string $name,
         string $level = LogLevel::DEBUG,
-        string $filename = 'php://stdout',
+        string $filename = LoggerConfig::DEFAULT_FILENAME,
         ?\DateTimeZone $timezone = null,
     ): MonologLogger {
         return new MonologLogger(
@@ -154,7 +168,7 @@ final class LoggerFactory
      *
      * @return array<StreamHandler> The default handlers.
      */
-    private static function getDefaultHandlers(string $level, string $filename = 'php://stdout'): array
+    private static function getDefaultHandlers(string $level, string $filename = LoggerConfig::DEFAULT_FILENAME): array
     {
         return [
             new StreamHandler(
