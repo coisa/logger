@@ -226,13 +226,75 @@ final class PrivateFileHandlerTest extends TestCase
         return [['open', false], ['lock', false], ['append', false], ['append', 0]];
     }
 
+    /**
+     * Verifies failed release closes the descriptor and preserves an earlier write error.
+     *
+     * @dataProvider failedReleases
+     * @param bool $writeFails Whether the append itself fails first.
+     * @param string $message The first observable failure diagnostic.
+     */
+    public function testFailedReleaseFailsClosed(bool $writeFails, string $message): void
+    {
+        $operations = $this->operations(lockResult: null);
+        $stream = new \stdClass();
+        $operations->method('metadata')->willReturn($this->metadata());
+        $operations->method('descriptorMetadata')->willReturn($this->metadata());
+        $operations->method('open')->willReturn($stream);
+        $operations->method('restrict')->willReturn(true);
+        $operations->expects(self::exactly(2))->method('lock')->willReturnOnConsecutiveCalls(true, false);
+        $operations->expects(self::once())->method('append')->willReturnCallback(
+            static fn ($handle, string $bytes): int|false => $writeFails ? false : strlen($bytes),
+        );
+        $operations->expects(self::once())->method('close')->with($stream);
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage($message);
+        (new PrivateFileHandler('debug.log', operations: $operations))->handle($this->record());
+    }
+
+    /** @return list<array{bool, string}> Release-only failure and combined write/release failure. */
+    public static function failedReleases(): array
+    {
+        return [[false, 'lock could not be released'], [true, 'Writing the private log file failed']];
+    }
+
+    /** Verifies local colon filenames remain usable without opening a native file. */
+    public function testAcceptsLocalColonFilename(): void
+    {
+        $operations = $this->createMock(FileOperations::class);
+        $operations->expects(self::never())->method('open');
+        self::assertInstanceOf(PrivateFileHandler::class, new PrivateFileHandler('app:debug.log', operations: $operations));
+    }
+
+    /**
+     * Verifies actual PHP wrapper syntax is rejected before any native operation.
+     *
+     * @dataProvider streamDestinations
+     * @param string $filename The stream wrapper URL.
+     */
+    public function testRejectsStreamDestinations(string $filename): void
+    {
+        $operations = $this->createMock(FileOperations::class);
+        $operations->expects(self::never())->method('canonicalize');
+        $operations->expects(self::never())->method('open');
+        $this->expectException(\InvalidArgumentException::class);
+        new PrivateFileHandler($filename, operations: $operations);
+    }
+
+    /** @return list<array{string}> Built-in and valid custom wrapper syntax. */
+    public static function streamDestinations(): array
+    {
+        return [['php://stdout'], ['file:///tmp/debug'], ['data:text/plain,record'], ['1x://records']];
+    }
+
     /** @return FileOperations Mocked native boundary with a trusted synthetic parent. */
-    private function operations(bool $lockResult = true): FileOperations
+    private function operations(?bool $lockResult = true): FileOperations
     {
         $operations = $this->createMock(FileOperations::class);
         $operations->method('canonicalize')->willReturn('/owned/debug.log');
         $operations->method('parentMetadata')->willReturn(['mode' => 0040700]);
-        $operations->method('lock')->willReturn($lockResult);
+        if ($lockResult !== null) {
+            $operations->method('lock')->willReturn($lockResult);
+        }
         return $operations;
     }
 

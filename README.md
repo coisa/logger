@@ -92,7 +92,9 @@ destination MUST be a local path: stream schemes, including `php://stdout`,
 `php://stderr` and `file://`, are rejected. `enabled: false` also disables
 logging. The disabled service remains a `CoiSA\Logger\Logger` backed by
 Monolog's NullHandler; it writes nothing, adds no metadata, constructs no sink
-or processors and does not resolve a container timezone.
+or processors and uses fixed UTC without consulting the container or process timezone.
+Ordinary local names such as `app:debug.log` remain valid; actual PHP wrapper
+syntax (including `data:` and schemes starting with digits) is rejected.
 
 File-only mode uses a constant `application` channel and no processors by
 default. The parent directory must already exist, be controlled by the
@@ -103,7 +105,9 @@ private umask, which is restored even on failure. Every open/reopen checks
 `chmod(0600)` success and actual descriptor permissions. Every append (including
 partial writes) verifies regular-file status, effective 0600 and matching
 path/descriptor device and inode. Lock, permission or write failures close the
-descriptor and raise UnexpectedValueException; no stdout fallback or retry loop
+descriptor and raise UnexpectedValueException, including failed lock release.
+If writing and lock release both fail, the original write error is preserved;
+no stdout fallback or retry loop
 is added. Resets close the file, and changed file identities require revalidation.
 
 These checks target local POSIX-style filesystems with trustworthy permission

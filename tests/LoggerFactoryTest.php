@@ -219,6 +219,35 @@ final class LoggerFactoryTest extends TestCase
         self::assertSame('', MemoryLogStream::$records);
     }
 
+    /**
+     * Verifies disabled backend state is independent of the process timezone and fallback service.
+     *
+     * @dataProvider disabledConfigurations
+     * @param array<string, mixed> $options The disabled logger settings.
+     */
+    public function testDisabledBackendUsesFixedUtc(array $options): void
+    {
+        $previous = date_default_timezone_get();
+        try {
+            date_default_timezone_set('Pacific/Auckland');
+            $container = $this->createMock(ContainerInterface::class);
+            $container->method('get')->with(LoggerConfig::class)->willReturn($this->configuration($options));
+            $container->expects(self::never())->method('has');
+            $logger = (new LoggerFactory())($container);
+            $backend = (new \ReflectionProperty(Logger::class, 'logger'))->getValue($logger);
+            self::assertSame('UTC', $backend->getTimezone()->getName());
+            self::assertSame([], $backend->getProcessors());
+        } finally {
+            date_default_timezone_set($previous);
+        }
+    }
+
+    /** @return list<array{array<string, mixed>}> Explicit and implicit opt-outs. */
+    public static function disabledConfigurations(): array
+    {
+        return [[['enabled' => false]], [['file_only' => true]], [['file_only' => true, 'filename' => ' ']]];
+    }
+
     /** Verifies the selected formatter and processor opt-out in a memory-only sink. */
     public function testJsonWithNoProcessorsDoesNotAddMetadata(): void
     {

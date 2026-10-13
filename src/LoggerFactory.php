@@ -82,7 +82,11 @@ final class LoggerFactory
             throw new \InvalidArgumentException('The logger configuration service must be a LoggerConfig instance.');
         }
         if (!$config->enabled) {
-            return new Logger(new MonologLogger('application', [new NullHandler()]));
+            return new Logger(new MonologLogger(
+                name: 'application',
+                handlers: [new NullHandler()],
+                timezone: new \DateTimeZone('UTC'),
+            ));
         }
         $handler = $config->fileOnly
             ? new PrivateFileHandler($config->filename, $config->level->value, $this->fileOperations)

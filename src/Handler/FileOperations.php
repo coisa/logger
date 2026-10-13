@@ -34,6 +34,9 @@ class FileOperations
      */
     public function canonicalize(string $filename): string
     {
+        if (preg_match('/^(?:[a-z0-9+.-]+:\/\/|data:)/i', $filename)) {
+            throw new \UnexpectedValueException('The private log destination must not name a stream wrapper.');
+        }
         clearstatcache(true);
         $parent = realpath(dirname($filename));
         if ($parent === false) {

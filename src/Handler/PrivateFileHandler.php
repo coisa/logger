@@ -51,7 +51,7 @@ final class PrivateFileHandler extends AbstractProcessingHandler
     ) {
         if (
             trim($filename) === '' || str_contains($filename, "\0")
-            || preg_match('/^[a-z][a-z0-9+.-]*:/i', $filename)
+            || preg_match('/^(?:[a-z0-9+.-]+:\/\/|data:)/i', $filename)
         ) {
             throw new \InvalidArgumentException('A private log destination must be a local file path.');
         }
@@ -72,6 +72,7 @@ final class PrivateFileHandler extends AbstractProcessingHandler
             if (!$this->operations->lock($this->stream, true)) {
                 throw new \UnexpectedValueException('The private log file could not be locked.');
             }
+            $writeFailure = null;
             try {
                 $bytes = (string) $record->formatted;
                 while ($bytes !== '') {
@@ -82,8 +83,13 @@ final class PrivateFileHandler extends AbstractProcessingHandler
                     }
                     $bytes = substr($bytes, $written);
                 }
+            } catch (\Throwable $exception) {
+                $writeFailure = $exception;
+                throw $exception;
             } finally {
-                $this->operations->lock($this->stream, false);
+                if (!$this->operations->lock($this->stream, false) && $writeFailure === null) {
+                    throw new \UnexpectedValueException('The private log file lock could not be released.');
+                }
             }
         } catch (\Throwable $exception) {
             $this->close();

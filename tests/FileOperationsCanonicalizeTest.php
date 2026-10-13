@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace CoiSA\Logger;
 
 use CoiSA\Logger\Handler\FileOperations;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -15,8 +13,6 @@ use PHPUnit\Framework\TestCase;
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
  */
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class FileOperationsCanonicalizeTest extends TestCase
 {
     /** @return void Verifies parent and ancestor aliases follow a trusted deployment switch. */
@@ -63,6 +59,7 @@ final class FileOperationsCanonicalizeTest extends TestCase
                 $operations->canonicalize('/var/application/debug.log'),
             );
             self::assertSame('/owned/0', $operations->canonicalize('0'));
+            self::assertSame('/owned/app:debug.log', $operations->canonicalize('app:debug.log'));
         } finally {
             unset($GLOBALS['coisa_file_operations_paths']);
         }

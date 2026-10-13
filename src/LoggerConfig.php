@@ -138,7 +138,7 @@ final readonly class LoggerConfig
     {
         if (
             !is_string($filename) || str_contains($filename, "\0") || (!$fileOnly && trim($filename) === '')
-            || ($fileOnly && preg_match('/^[a-z][a-z0-9+.-]*:/i', $filename))
+            || ($fileOnly && preg_match('/^(?:[a-z0-9+.-]+:\/\/|data:)/i', $filename))
         ) {
             throw new \InvalidArgumentException(
                 'logger.filename must be a non-empty path or stream without NUL bytes.',

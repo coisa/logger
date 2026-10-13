@@ -133,11 +133,21 @@ final class LoggerConfigTest extends TestCase
             [['enabled' => 'false']], [['file_only' => 1]],
             [['file_only' => true, 'filename' => 'php://stdout']],
             [['file_only' => true, 'filename' => 'file:///tmp/debug']],
+            [['file_only' => true, 'filename' => '1x://records']],
+            [['file_only' => true, 'filename' => 'data:text/plain,record']],
             [['processors' => ['Unknown\\Processor']]], [['processors' => 'psr_message']],
             [['processors' => ['psr_message', 'psr_message']]], [['processors' => [false]]],
             [['processors' => [0 => 'psr_message', 2 => 'psr_message']]],
             [['formatter' => 'xml']],
         ];
+    }
+
+    /** Verifies an ordinary local filename with a colon is not mistaken for a wrapper. */
+    public function testFileOnlyAcceptsLocalColonFilename(): void
+    {
+        $config = $this->configuration(['file_only' => true, 'filename' => 'app:debug.log']);
+        self::assertTrue($config->enabled);
+        self::assertSame('app:debug.log', $config->filename);
     }
 
     /**

@@ -69,6 +69,26 @@ final class FileOperationsTest extends TestCase
         self::assertSame('A1B1', MemoryFileStream::$files[self::DESTINATION]);
     }
 
+    /** Verifies PHP accepts a digit-prefixed wrapper that private canonicalization must reject. */
+    public function testRejectsRegisteredDigitPrefixedWrapper(): void
+    {
+        self::assertTrue(stream_wrapper_register('1x', MemoryFileStream::class));
+        $stream = null;
+        try {
+            $stream = fopen('1x://records', 'xb');
+            self::assertIsResource($stream);
+            self::assertSame(6, fwrite($stream, 'marker'));
+            self::assertSame('marker', MemoryFileStream::$files['1x://records']);
+            $this->expectException(\UnexpectedValueException::class);
+            (new FileOperations())->canonicalize('1x://records');
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+            stream_wrapper_unregister('1x');
+        }
+    }
+
     /**
      * Opens an isolated stream owned by the current test.
      *
