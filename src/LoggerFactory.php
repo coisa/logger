@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 namespace CoiSA\Logger;
 
+use FastForward\Config\ConfigInterface;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger as MonologLogger;
 use Monolog\Processor\LoadAverageProcessor;
@@ -50,9 +51,8 @@ final class LoggerFactory
     /**
      * Invokes the factory to create a logger instance.
      *
-     * The method SHALL attempt to resolve a timezone from the provided
-     * dependency injection container. If no timezone is found, it MAY default
-     * to `null`.
+     * Optional Fast Forward configuration overrides factory defaults. A
+     * container timezone is used only when logger.timezone is not configured.
      *
      * @param ContainerInterface $container The dependency injection container.
      *
@@ -60,11 +60,57 @@ final class LoggerFactory
      */
     public function __invoke(ContainerInterface $container): LoggerInterface
     {
-        $timezone = $container->has(\DateTimeZone::class)
-            ? $container->get(\DateTimeZone::class)
-            : null;
+        $options = [];
+        if ($container->has(ConfigInterface::class)) {
+            $config = $container->get(ConfigInterface::class);
+            if (!$config instanceof ConfigInterface) {
+                throw new \InvalidArgumentException(
+                    'The config service must implement ' . ConfigInterface::class . '.',
+                );
+            }
 
-        return self::createLogger(timezone: $timezone);
+            $options = $config->get('logger', []);
+            if ($options instanceof ConfigInterface) {
+                $options = $options->toArray();
+            }
+            if (!is_array($options)) {
+                throw new \InvalidArgumentException('logger must be an array.');
+            }
+        }
+
+        $level = array_key_exists('level', $options) ? $options['level'] : LogLevel::DEBUG;
+        $levels = [
+            LogLevel::DEBUG, LogLevel::INFO, LogLevel::NOTICE, LogLevel::WARNING,
+            LogLevel::ERROR, LogLevel::CRITICAL, LogLevel::ALERT, LogLevel::EMERGENCY,
+        ];
+        if (!is_string($level) || !in_array(strtolower($level), $levels, true)) {
+            throw new \InvalidArgumentException('logger.level must be a PSR-3 level name.');
+        }
+
+        $filename = array_key_exists('filename', $options) ? $options['filename'] : 'php://stdout';
+        if (!is_string($filename) || trim($filename) === '' || str_contains($filename, "\0")) {
+            throw new \InvalidArgumentException(
+                'logger.filename must be a non-empty path or stream without NUL bytes.',
+            );
+        }
+
+        $timezone = array_key_exists('timezone', $options)
+            ? $options['timezone']
+            : ($container->has(\DateTimeZone::class) ? $container->get(\DateTimeZone::class) : null);
+        if (is_string($timezone)) {
+            try {
+                $timezone = new \DateTimeZone($timezone);
+            } catch (\Exception $exception) {
+                throw new \InvalidArgumentException('logger.timezone must be a valid timezone name.', 0, $exception);
+            }
+        }
+        if ($timezone !== null && !$timezone instanceof \DateTimeZone) {
+            throw new \InvalidArgumentException(
+                'logger.timezone or the container timezone must be a DateTimeZone, timezone name or null.',
+            );
+        }
+
+        return self::createLogger(level: $level, filename: $filename, timezone: $timezone);
     }
 
     /**
