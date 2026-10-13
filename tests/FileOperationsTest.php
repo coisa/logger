@@ -8,7 +8,7 @@ use CoiSA\Logger\Handler\FileOperations;
 use CoiSA\Logger\Support\MemoryFileStream;
 use PHPUnit\Framework\TestCase;
 
-/** Behavioral tests of the real append boundary without physical filesystem access. */
+/** Behavioral tests of the real open and append boundaries without physical filesystem access. */
 final class FileOperationsTest extends TestCase
 {
     private const DESTINATION = 'coisafileunit://records';
@@ -39,6 +39,41 @@ final class FileOperationsTest extends TestCase
         }
         MemoryFileStream::$files = [];
         MemoryFileStream::$seekFails = false;
+    }
+
+    public function testExistingOpenDoesNotRecreateRemovedDestination(): void
+    {
+        MemoryFileStream::$files[self::DESTINATION] = 'A1';
+        unset(MemoryFileStream::$files[self::DESTINATION]);
+
+        self::assertFalse((new FileOperations())->open(self::DESTINATION, false));
+        self::assertArrayNotHasKey(self::DESTINATION, MemoryFileStream::$files);
+    }
+
+    public function testExistingOpenPreservesBytesAndAppends(): void
+    {
+        MemoryFileStream::$files[self::DESTINATION] = 'A1';
+        $operations = new FileOperations();
+        $stream = $operations->open(self::DESTINATION, false);
+        self::assertIsResource($stream);
+        $this->streams[] = $stream;
+
+        self::assertSame('A1', MemoryFileStream::$files[self::DESTINATION]);
+        self::assertSame(2, $operations->append($stream, 'B1'));
+        self::assertSame('A1B1', MemoryFileStream::$files[self::DESTINATION]);
+    }
+
+    public function testExclusiveCreationCannotReplaceExistingDestination(): void
+    {
+        $operations = new FileOperations();
+        $stream = $operations->open(self::DESTINATION, true);
+        self::assertIsResource($stream);
+        $this->streams[] = $stream;
+
+        self::assertSame('', MemoryFileStream::$files[self::DESTINATION]);
+        self::assertSame(2, $operations->append($stream, 'A1'));
+        self::assertFalse($operations->open(self::DESTINATION, true));
+        self::assertSame('A1', MemoryFileStream::$files[self::DESTINATION]);
     }
 
     /** @return void Verifies each creator chunk preserves bytes appended by another handle. */

@@ -28,7 +28,7 @@ final class MemoryFileStream
     private bool $append = false;
 
     /**
-     * Opens an exclusively created or append-only synthetic file.
+     * Opens an exclusively created, existing or append-only synthetic file.
      *
      * @param string $path The in-memory destination.
      * @param string $mode The requested stream mode.
@@ -38,10 +38,13 @@ final class MemoryFileStream
      */
     public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
     {
-        if (!in_array($mode, ['xb', 'ab'], true)) {
+        if (!in_array($mode, ['xb', 'ab', 'r+b'], true)) {
             return false;
         }
         if ($mode === 'xb' && array_key_exists($path, self::$files)) {
+            return false;
+        }
+        if ($mode === 'r+b' && !array_key_exists($path, self::$files)) {
             return false;
         }
         self::$files[$path] ??= '';

@@ -262,7 +262,10 @@ final class PrivateFileHandlerTest extends TestCase
     {
         $operations = $this->createMock(FileOperations::class);
         $operations->expects(self::never())->method('open');
-        self::assertInstanceOf(PrivateFileHandler::class, new PrivateFileHandler('app:debug.log', operations: $operations));
+        self::assertInstanceOf(
+            PrivateFileHandler::class,
+            new PrivateFileHandler('app:debug.log', operations: $operations),
+        );
     }
 
     /**

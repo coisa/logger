@@ -78,7 +78,7 @@ class FileOperations
     public function open(string $path, bool $create): mixed
     {
         if (!$create) {
-            return @fopen($path, 'ab');
+            return @fopen($path, 'r+b');
         }
         $mask = umask(0077);
         try {
