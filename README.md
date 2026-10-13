@@ -41,6 +41,13 @@ changes only the supplied keys. `timezone` accepts a timezone name, a
 `DateTimeZone` instance, or explicit `null` to select the process default and
 bypass the container timezone. Explicit configuration has precedence.
 
+`LoggerConfig` is constructed from `ConfigInterface` and exposes validated
+`getLevel()`, `getFilename()`, `hasTimezone()` and `getTimezone($fallback)` getters.
+The level getter returns the backed `CoiSA\Logger\Enum\LogLevel` enum; the factory
+converts its value at the existing string-based `createLogger()` boundary. A
+timezone fallback is validated only when that setting is absent; an explicit
+timezone, including `null`, never resolves the container's timezone service.
+
 Levels accept only the eight canonical lowercase PSR-3 level names. Invalid types,
 unknown levels/timezones, empty paths and paths containing NUL bytes fail during
 factory resolution with `InvalidArgumentException`. The factory does not open

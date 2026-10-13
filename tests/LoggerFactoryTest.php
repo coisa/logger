@@ -137,14 +137,20 @@ final class LoggerFactoryTest extends TestCase
         self::assertStringContainsString('+14:00', file_get_contents($this->filename));
     }
 
-    public function testExplicitNullTimezoneDoesNotResolveContainerTimezone(): void
+    /** @dataProvider timezoneOverrides */
+    public function testExplicitTimezoneDoesNotResolveContainerTimezone(mixed $timezone): void
     {
         $container = $this->createMock(ContainerInterface::class);
-        $container->method('has')->willReturnCallback(static fn (string $id): bool => $id === ConfigInterface::class);
+        $container->expects(self::once())->method('has')->with(ConfigInterface::class)->willReturn(true);
         $container->expects(self::once())->method('get')->with(ConfigInterface::class)->willReturn(new ArrayConfig([
-            'logger' => ['filename' => $this->filename, 'timezone' => null],
+            'logger' => ['filename' => $this->filename, 'timezone' => $timezone],
         ]));
         self::assertInstanceOf(LoggerInterface::class, (new LoggerFactory())($container));
+    }
+
+    public static function timezoneOverrides(): array
+    {
+        return [[null], ['UTC'], [new \DateTimeZone('UTC')]];
     }
 
     /** @dataProvider invalidConfiguration */
