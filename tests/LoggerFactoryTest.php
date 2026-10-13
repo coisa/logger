@@ -59,12 +59,44 @@ final class LoggerFactoryTest extends TestCase
         (new LoggerFactory())($this->container([\DateTimeZone::class => new \stdClass()]));
     }
 
-    public function testUppercaseLevelAndUnrelatedConfigAreAccepted(): void
+    public function testNulContainerTimezoneFailsClearly(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('logger.timezone');
+        (new LoggerFactory())($this->container([\DateTimeZone::class => "UTC\0invalid"]));
+    }
+
+    public function testUnrelatedConfigIsAccepted(): void
     {
         $logger = (new LoggerFactory())($this->container([ConfigInterface::class => new ArrayConfig([
             'application' => ['name' => 'synthetic'],
-            'logger' => ['level' => 'ERROR', 'filename' => $this->filename],
+            'logger' => ['level' => 'error', 'filename' => $this->filename],
         ])]));
+        $logger->warning('filtered marker');
+        $logger->error('visible marker');
+        self::assertStringNotContainsString('filtered marker', file_get_contents($this->filename));
+        self::assertStringContainsString('visible marker', file_get_contents($this->filename));
+    }
+
+    /** @dataProvider canonicalLevels */
+    public function testCanonicalLevelsAreAccepted(string $level): void
+    {
+        $logger = $this->configured(['level' => $level, 'filename' => $this->filename]);
+        $logger->log($level, 'canonical level marker');
+        self::assertStringContainsString('canonical level marker', file_get_contents($this->filename));
+    }
+
+    public static function canonicalLevels(): array
+    {
+        return [
+            ['debug'], ['info'], ['notice'], ['warning'],
+            ['error'], ['critical'], ['alert'], ['emergency'],
+        ];
+    }
+
+    public function testDirectFactoryStillAcceptsUppercaseLevel(): void
+    {
+        $logger = LoggerFactory::createLogger(level: 'ERROR', filename: $this->filename);
         $logger->warning('hidden uppercase');
         $logger->error('visible uppercase');
         self::assertStringNotContainsString('hidden uppercase', file_get_contents($this->filename));
@@ -129,6 +161,8 @@ final class LoggerFactoryTest extends TestCase
             'section' => ['invalid', 'logger must be an array'],
             'level type' => [['level' => 100], 'logger.level'],
             'unknown level' => [['level' => 'verbose'], 'logger.level'],
+            'uppercase level' => [['level' => 'ERROR'], 'logger.level'],
+            'mixed-case level' => [['level' => 'Error'], 'logger.level'],
             'empty level' => [['level' => ''], 'logger.level'],
             'null level' => [['level' => null], 'logger.level'],
             'filename type' => [['filename' => false], 'logger.filename'],
@@ -137,6 +171,7 @@ final class LoggerFactoryTest extends TestCase
             'NUL filename' => [['filename' => "bad\0path"], 'logger.filename'],
             'timezone type' => [['timezone' => 42], 'logger.timezone'],
             'unknown timezone' => [['timezone' => 'Not/AZone'], 'logger.timezone'],
+            'NUL timezone' => [['timezone' => "UTC\0invalid"], 'logger.timezone'],
         ];
     }
 

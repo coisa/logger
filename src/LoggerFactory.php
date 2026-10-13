@@ -83,7 +83,7 @@ final class LoggerFactory
             LogLevel::DEBUG, LogLevel::INFO, LogLevel::NOTICE, LogLevel::WARNING,
             LogLevel::ERROR, LogLevel::CRITICAL, LogLevel::ALERT, LogLevel::EMERGENCY,
         ];
-        if (!is_string($level) || !in_array(strtolower($level), $levels, true)) {
+        if (!is_string($level) || !in_array($level, $levels, true)) {
             throw new \InvalidArgumentException('logger.level must be a PSR-3 level name.');
         }
 
@@ -100,7 +100,7 @@ final class LoggerFactory
         if (is_string($timezone)) {
             try {
                 $timezone = new \DateTimeZone($timezone);
-            } catch (\Exception $exception) {
+            } catch (\Exception | \ValueError $exception) {
                 throw new \InvalidArgumentException('logger.timezone must be a valid timezone name.', 0, $exception);
             }
         }
