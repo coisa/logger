@@ -136,16 +136,16 @@ final readonly class LoggerConfig
      */
     private static function resolveFilename(mixed $filename, bool $fileOnly): string
     {
-        if ($fileOnly && is_string($filename) && trim($filename) === '') {
-            return '';
-        }
         if (
-            !is_string($filename) || trim($filename) === '' || str_contains($filename, "\0")
+            !is_string($filename) || str_contains($filename, "\0") || (!$fileOnly && trim($filename) === '')
             || ($fileOnly && preg_match('/^[a-z][a-z0-9+.-]*:/i', $filename))
         ) {
             throw new \InvalidArgumentException(
                 'logger.filename must be a non-empty path or stream without NUL bytes.',
             );
+        }
+        if ($fileOnly && trim($filename) === '') {
+            return '';
         }
 
         return $filename;

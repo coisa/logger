@@ -74,7 +74,26 @@ final class LoggerConfigTest extends TestCase
     /** @return list<array{mixed}> Values representing absent destinations. */
     public static function disabledDestinations(): array
     {
-        return [[null], [''], ['  ']];
+        return [[null], [''], ['  '], ["\t\n\r\v "]];
+    }
+
+    /**
+     * Verifies file-only NUL destinations fail during configuration construction.
+     *
+     * @dataProvider nulFileDestinations
+     * @param string $filename The malformed configured destination.
+     */
+    public function testFileOnlyDestinationsRejectNulBytes(string $filename): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('logger.filename');
+        $this->configuration(['file_only' => true, 'filename' => $filename]);
+    }
+
+    /** @return list<array{string}> Pure, whitespace-mixed and nonblank NUL destinations. */
+    public static function nulFileDestinations(): array
+    {
+        return [["\0"], [" \t\0\r\n\v "], ["bad\0path"]];
     }
 
     /** Verifies readonly typed configuration exposes the selected finite values. */
