@@ -127,6 +127,9 @@ class FileOperations
      */
     public function append(mixed $stream, string $bytes): int|false
     {
+        if (@fseek($stream, 0, SEEK_END) !== 0) {
+            return false;
+        }
         return @fwrite($stream, $bytes);
     }
 
