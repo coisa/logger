@@ -2,13 +2,26 @@
 
 declare(strict_types=1);
 
+/**
+ * This file is part of coisa/logger.
+ *
+ * This source file is subject to the license that is bundled
+ * with this source code in the file LICENSE.
+ *
+ * @link      https://github.com/coisa/logger
+ * @link      https://12factor.net/logs
+ *
+ * @copyright Copyright (c) 2022-2026 Felipe Sayão Lobato Abreu <github@mentordosnerds.com>
+ * @license   https://opensource.org/licenses/MIT MIT License
+ */
+
 namespace CoiSA\Logger;
 
-use CoiSA\Logger\Enum\LogLevel as ConfiguredLogLevel;
 use CoiSA\Logger\Enum\Formatter;
+use CoiSA\Logger\Enum\LogLevel as ConfiguredLogLevel;
 use CoiSA\Logger\Enum\Processor;
-use CoiSA\Logger\Support\MemoryLogStream;
 use CoiSA\Logger\Support\CustomProcessor;
+use CoiSA\Logger\Support\MemoryLogStream;
 use FastForward\Config\ConfigInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -18,6 +31,8 @@ use Psr\Log\LoggerInterface;
  * Unit tests of container composition and static creation with an in-memory stream spy.
  *
  * @coversDefaultClass \CoiSA\Logger\LoggerFactory
+ *
+ * @internal
  */
 final class LoggerFactoryTest extends TestCase
 {
@@ -28,31 +43,27 @@ final class LoggerFactoryTest extends TestCase
 
     /**
      * Installs an isolated memory stream instead of real console or file IO.
-     *
-     * @return void
      */
     protected function setUp(): void
     {
-        MemoryLogStream::$records = '';
+        MemoryLogStream::$records   = '';
         CustomProcessor::$instances = 0;
-        CustomProcessor::$calls = 0;
-        $this->registered = stream_wrapper_register('coisalogunit', MemoryLogStream::class);
+        CustomProcessor::$calls     = 0;
+        $this->registered           = stream_wrapper_register('coisalogunit', MemoryLogStream::class);
         self::assertTrue($this->registered);
     }
 
     /**
      * Removes only the protocol installed by the current test.
-     *
-     * @return void
      */
     protected function tearDown(): void
     {
         if ($this->registered) {
             stream_wrapper_unregister('coisalogunit');
         }
-        MemoryLogStream::$records = '';
+        MemoryLogStream::$records   = '';
         CustomProcessor::$instances = 0;
-        CustomProcessor::$calls = 0;
+        CustomProcessor::$calls     = 0;
     }
 
     /**
@@ -64,7 +75,8 @@ final class LoggerFactoryTest extends TestCase
     {
         $container = $this->createMock(ContainerInterface::class);
         $container->expects(self::once())->method('get')->with(LoggerConfig::class)
-            ->willReturn($this->configuration([]));
+            ->willReturn($this->configuration([]))
+        ;
         $container->expects(self::once())->method('has')->with(\DateTimeZone::class)->willReturn(false);
         self::assertInstanceOf(LoggerInterface::class, (new LoggerFactory())($container));
     }
@@ -87,16 +99,18 @@ final class LoggerFactoryTest extends TestCase
     /**
      * Verifies that non-null configuration skips all fallback-service resolution.
      *
-     * @param string|\DateTimeZone $timezone The explicit configured timezone.
+     * @param \DateTimeZone|string $timezone the explicit configured timezone
      *
      * @covers ::__invoke
-     * @dataProvider configuredTimezones
+     *
+     * @dataProvider provideConfiguredTimezoneSkipsContainerFallbackCases
      */
-    public function testConfiguredTimezoneSkipsContainerFallback(string|\DateTimeZone $timezone): void
+    public function testConfiguredTimezoneSkipsContainerFallback(\DateTimeZone|string $timezone): void
     {
         $container = $this->createMock(ContainerInterface::class);
         $container->expects(self::once())->method('get')->with(LoggerConfig::class)
-            ->willReturn($this->configuration(['timezone' => $timezone]));
+            ->willReturn($this->configuration(['timezone' => $timezone]))
+        ;
         $container->expects(self::never())->method('has');
         self::assertInstanceOf(LoggerInterface::class, (new LoggerFactory())($container));
     }
@@ -104,9 +118,9 @@ final class LoggerFactoryTest extends TestCase
     /**
      * Supplies explicit timezone values.
      *
-     * @return list<array{string|\DateTimeZone}> Supported values.
+     * @return list<array{\DateTimeZone|string}> supported values
      */
-    public static function configuredTimezones(): array
+    public static function provideConfiguredTimezoneSkipsContainerFallbackCases(): iterable
     {
         return [['UTC'], [new \DateTimeZone('UTC')]];
     }
@@ -114,15 +128,16 @@ final class LoggerFactoryTest extends TestCase
     /**
      * Verifies that both null and absent configuration allow nullable legacy service values.
      *
-     * @param mixed $fallback A supported container timezone value.
-     * @param array<array-key, mixed> $options The logger settings.
+     * @param mixed                   $fallback a supported container timezone value
+     * @param array<array-key, mixed> $options  the logger settings
      *
      * @covers ::__invoke
-     * @dataProvider timezoneFallbacks
+     *
+     * @dataProvider provideLazyContainerTimezoneFallbackCases
      */
     public function testLazyContainerTimezoneFallback(mixed $fallback, array $options): void
     {
-        $config = $this->configuration($options + ['filename' => self::DESTINATION]);
+        $config    = $this->configuration($options + ['filename' => self::DESTINATION]);
         $container = $this->createMock(ContainerInterface::class);
         $container->expects(self::once())->method('has')->with(\DateTimeZone::class)->willReturn(true);
         $container->expects(self::exactly(2))->method('get')->willReturnMap([
@@ -131,7 +146,7 @@ final class LoggerFactoryTest extends TestCase
         ]);
         (new LoggerFactory())($container)->debug('fallback marker');
         self::assertStringContainsString('fallback marker', MemoryLogStream::$records);
-        if ($fallback !== null) {
+        if (null !== $fallback) {
             self::assertStringContainsString('+14:00', MemoryLogStream::$records);
         }
     }
@@ -139,9 +154,9 @@ final class LoggerFactoryTest extends TestCase
     /**
      * Provides missing/null settings with accepted service values.
      *
-     * @return list<array{mixed, array<array-key, mixed>}> Fallback and settings.
+     * @return list<array{mixed, array<array-key, mixed>}> fallback and settings
      */
-    public static function timezoneFallbacks(): array
+    public static function provideLazyContainerTimezoneFallbackCases(): iterable
     {
         return [
             [null, []], [null, ['timezone' => null]],
@@ -154,10 +169,11 @@ final class LoggerFactoryTest extends TestCase
     /**
      * Verifies malformed non-null service values produce clear diagnostics.
      *
-     * @param mixed $fallback The invalid timezone value.
+     * @param mixed $fallback the invalid timezone value
      *
      * @covers ::__invoke
-     * @dataProvider invalidFallbacks
+     *
+     * @dataProvider provideInvalidContainerTimezoneCases
      */
     public function testInvalidContainerTimezone(mixed $fallback): void
     {
@@ -175,9 +191,9 @@ final class LoggerFactoryTest extends TestCase
     /**
      * Supplies invalid container values.
      *
-     * @return list<array{mixed}> Values requiring rejection.
+     * @return list<array{mixed}> values requiring rejection
      */
-    public static function invalidFallbacks(): array
+    public static function provideInvalidContainerTimezoneCases(): iterable
     {
         return [[false], ['Not/AZone'], ["UTC\0bad"]];
     }
@@ -189,7 +205,7 @@ final class LoggerFactoryTest extends TestCase
      */
     public function testStaticEnumAndLegacyStringHaveEquivalentThresholds(): void
     {
-        $enum = LoggerFactory::createLogger(ConfiguredLogLevel::ERROR, self::DESTINATION);
+        $enum   = LoggerFactory::createLogger(ConfiguredLogLevel::ERROR, self::DESTINATION);
         $string = LoggerFactory::createLogger('ERROR', self::DESTINATION);
         $enum->warning('hidden enum');
         $string->warning('hidden string');
@@ -253,7 +269,7 @@ final class LoggerFactoryTest extends TestCase
         $container = $this->createMock(ContainerInterface::class);
         $container->method('get')->with(LoggerConfig::class)->willReturn(
             $this->configuration([
-                'filename' => self::DESTINATION, 'processors' => [Processor::PSR_MESSAGE],
+                'filename'  => self::DESTINATION, 'processors' => [Processor::PSR_MESSAGE],
                 'formatter' => 'json', 'timezone' => 'UTC',
             ]),
         );
@@ -301,7 +317,7 @@ final class LoggerFactoryTest extends TestCase
     {
         $container = $this->createMock(ContainerInterface::class);
         $container->method('get')->with(LoggerConfig::class)->willReturn($this->configuration([
-            'filename' => self::DESTINATION, 'processors' => [CustomProcessor::class],
+            'filename'  => self::DESTINATION, 'processors' => [CustomProcessor::class],
             'formatter' => 'json', 'timezone' => 'UTC',
         ]));
         (new LoggerFactory())($container)->info('synthetic record');
@@ -314,9 +330,9 @@ final class LoggerFactoryTest extends TestCase
     /**
      * Creates a validated value using a mocked source, not a concrete config backend.
      *
-     * @param array<array-key, mixed> $options The source settings.
+     * @param array<array-key, mixed> $options the source settings
      *
-     * @return LoggerConfig The immutable value returned by the mocked container.
+     * @return LoggerConfig the immutable value returned by the mocked container
      */
     private function configuration(array $options): LoggerConfig
     {

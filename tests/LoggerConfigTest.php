@@ -2,17 +2,34 @@
 
 declare(strict_types=1);
 
+/**
+ * This file is part of coisa/logger.
+ *
+ * This source file is subject to the license that is bundled
+ * with this source code in the file LICENSE.
+ *
+ * @link      https://github.com/coisa/logger
+ * @link      https://12factor.net/logs
+ *
+ * @copyright Copyright (c) 2022-2026 Felipe Sayão Lobato Abreu <github@mentordosnerds.com>
+ * @license   https://opensource.org/licenses/MIT MIT License
+ */
+
 namespace CoiSA\Logger;
 
+use CoiSA\Logger\Enum\Formatter;
 use CoiSA\Logger\Enum\LogLevel;
 use CoiSA\Logger\Enum\Processor;
 use FastForward\Config\ConfigInterface;
+use Monolog\Processor\PsrLogMessageProcessor;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit coverage of validated immutable configuration.
  *
  * @coversDefaultClass \CoiSA\Logger\LoggerConfig
+ *
+ * @internal
  */
 final class LoggerConfigTest extends TestCase
 {
@@ -53,8 +70,9 @@ final class LoggerConfigTest extends TestCase
     /**
      * Verifies NUL destinations fail during configuration construction.
      *
-     * @dataProvider nulFileDestinations
-     * @param string $filename The malformed configured destination.
+     * @dataProvider provideDestinationsRejectNulBytesCases
+     *
+     * @param string $filename the malformed configured destination
      */
     public function testDestinationsRejectNulBytes(string $filename): void
     {
@@ -64,7 +82,7 @@ final class LoggerConfigTest extends TestCase
     }
 
     /** @return list<array{string}> Pure, whitespace-mixed and nonblank NUL destinations. */
-    public static function nulFileDestinations(): array
+    public static function provideDestinationsRejectNulBytesCases(): iterable
     {
         return [["\0"], [" \t\0\r\n\v "], ["bad\0path"]];
     }
@@ -73,10 +91,10 @@ final class LoggerConfigTest extends TestCase
     public function testProcessorAndFormatterSelectionsAreTyped(): void
     {
         $config = $this->configuration([
-            'processors' => [\Monolog\Processor\PsrLogMessageProcessor::class], 'formatter' => 'json',
+            'processors' => [PsrLogMessageProcessor::class], 'formatter' => 'json',
         ]);
-        self::assertSame([\Monolog\Processor\PsrLogMessageProcessor::class], $config->processors);
-        self::assertSame(\CoiSA\Logger\Enum\Formatter::JSON, $config->formatter);
+        self::assertSame([PsrLogMessageProcessor::class], $config->processors);
+        self::assertSame(Formatter::JSON, $config->formatter);
     }
 
     /** Verifies legacy defaults and explicit processor opt-out remain distinct. */
@@ -91,8 +109,9 @@ final class LoggerConfigTest extends TestCase
     /**
      * Verifies opt-in settings fail closed before filesystem access.
      *
-     * @dataProvider invalidNewOptions
-     * @param array<string, mixed> $options Invalid values.
+     * @dataProvider provideInvalidNewSettingsCases
+     *
+     * @param array<string, mixed> $options invalid values
      */
     public function testInvalidNewSettings(array $options): void
     {
@@ -101,11 +120,11 @@ final class LoggerConfigTest extends TestCase
     }
 
     /** @return list<array{array<string, mixed>}> Invalid opt-in values. */
-    public static function invalidNewOptions(): array
+    public static function provideInvalidNewSettingsCases(): iterable
     {
         return [
             [['enabled' => 'false']],
-            [['processors' => ['Unknown\\Processor']]], [['processors' => 'psr_message']],
+            [['processors' => ['Unknown\Processor']]], [['processors' => 'psr_message']],
             [['processors' => [Processor::PSR_MESSAGE, Processor::PSR_MESSAGE]]], [['processors' => [false]]],
             [['processors' => [0 => Processor::PSR_MESSAGE, 2 => Processor::PSR_MESSAGE]]],
             [['processors' => ['psr_message']]], [['processors' => [\stdClass::class]]],
@@ -125,7 +144,7 @@ final class LoggerConfigTest extends TestCase
     public function testAcceptsProcessorEnumCases(): void
     {
         self::assertSame(
-            [\Monolog\Processor\PsrLogMessageProcessor::class],
+            [PsrLogMessageProcessor::class],
             $this->configuration(['processors' => [Processor::PSR_MESSAGE]])->processors,
         );
     }
@@ -133,11 +152,12 @@ final class LoggerConfigTest extends TestCase
     /**
      * Verifies canonical strings against independently specified enum cases.
      *
-     * @param string $value The configured level name.
-     * @param LogLevel $expected The expected enum case.
+     * @param string   $value    the configured level name
+     * @param LogLevel $expected the expected enum case
      *
      * @covers ::__construct
-     * @dataProvider canonicalLevels
+     *
+     * @dataProvider provideCanonicalLevelCases
      */
     public function testCanonicalLevel(string $value, LogLevel $expected): void
     {
@@ -147,9 +167,9 @@ final class LoggerConfigTest extends TestCase
     /**
      * Provides every canonical PSR-3 level.
      *
-     * @return list<array{string, LogLevel}> Names and expected cases.
+     * @return list<array{string, LogLevel}> names and expected cases
      */
-    public static function canonicalLevels(): array
+    public static function provideCanonicalLevelCases(): iterable
     {
         return [
             ['debug', LogLevel::DEBUG], ['info', LogLevel::INFO],
@@ -221,11 +241,12 @@ final class LoggerConfigTest extends TestCase
     /**
      * Verifies invalid non-null settings fail during construction.
      *
-     * @param mixed $options The invalid section or settings.
-     * @param string $field The expected diagnostic field.
+     * @param mixed  $options the invalid section or settings
+     * @param string $field   the expected diagnostic field
      *
      * @covers ::__construct
-     * @dataProvider invalidOptions
+     *
+     * @dataProvider provideInvalidSettingsCases
      */
     public function testInvalidSettings(mixed $options, string $field): void
     {
@@ -237,9 +258,9 @@ final class LoggerConfigTest extends TestCase
     /**
      * Supplies invalid types, aliases and malicious string values.
      *
-     * @return list<array{mixed, string}> Invalid settings and diagnostics.
+     * @return list<array{mixed, string}> invalid settings and diagnostics
      */
-    public static function invalidOptions(): array
+    public static function provideInvalidSettingsCases(): iterable
     {
         return [
             ['not-an-array', 'logger must be an array'],
@@ -256,9 +277,9 @@ final class LoggerConfigTest extends TestCase
     /**
      * Constructs the SUT with a mocked configuration dependency.
      *
-     * @param mixed $options The section supplied by the configuration mock.
+     * @param mixed $options the section supplied by the configuration mock
      *
-     * @return LoggerConfig The normalized value under test.
+     * @return LoggerConfig the normalized value under test
      */
     private function configuration(mixed $options): LoggerConfig
     {

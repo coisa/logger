@@ -2,31 +2,49 @@
 
 declare(strict_types=1);
 
+/**
+ * This file is part of coisa/logger.
+ *
+ * This source file is subject to the license that is bundled
+ * with this source code in the file LICENSE.
+ *
+ * @link      https://github.com/coisa/logger
+ * @link      https://12factor.net/logs
+ *
+ * @copyright Copyright (c) 2022-2026 Felipe Sayão Lobato Abreu <github@mentordosnerds.com>
+ * @license   https://opensource.org/licenses/MIT MIT License
+ */
+
 namespace CoiSA\Logger;
 
-use PHPUnit\Framework\TestCase;
 use FastForward\Config\ConfigInterface;
+use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 
 /**
  * Unit coverage of public provider registrations without running a concrete container.
+ *
+ * @covers \CoiSA\Logger\ConfigProvider
+ * @covers \CoiSA\Logger\ContainerInteropServiceProvider
+ *
+ * @internal
  */
 final class ServiceProvidersTest extends TestCase
 {
     /**
      * Verifies factory entries and logger aliases through mocked dependencies.
      *
-     * @covers \CoiSA\Logger\ContainerInteropServiceProvider::getFactories
      * @covers \CoiSA\Logger\ContainerInteropServiceProvider::getExtensions
+     * @covers \CoiSA\Logger\ContainerInteropServiceProvider::getFactories
      */
     public function testInteropProviderRegistrationsAndAliases(): void
     {
-        $provider = new ContainerInteropServiceProvider();
+        $provider  = new ContainerInteropServiceProvider();
         $factories = $provider->getFactories();
         self::assertInstanceOf(LoggerConfigFactory::class, $factories[LoggerConfig::class]);
         self::assertInstanceOf(LoggerFactory::class, $factories[Logger::class]);
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger    = $this->createMock(LoggerInterface::class);
         $container = $this->createMock(ContainerInterface::class);
         $container->expects(self::exactly(2))->method('get')->willReturnMap([
             [LoggerInterface::class, $logger], [Logger::class, $logger],
@@ -54,13 +72,14 @@ final class ServiceProvidersTest extends TestCase
     /**
      * Executes provider registrations through a mocked shared PSR container.
      *
-     * @param string $provider The registration adapter.
-     * @param bool $enabled Whether the PSR logger is enabled.
-     * @dataProvider loggerBindings
+     * @param string $provider the registration adapter
+     * @param bool   $enabled  whether the PSR logger is enabled
+     *
+     * @dataProvider provideBindingsPreserveConcreteTypesAndEnabledIdentityCases
      */
     public function testBindingsPreserveConcreteTypesAndEnabledIdentity(string $provider, bool $enabled): void
     {
-        $dependencies = $provider === 'interop'
+        $dependencies = 'interop' === $provider
             ? ['factories' => (new ContainerInteropServiceProvider())->getFactories(), 'aliases' => []]
             : (new ConfigProvider())()['dependencies'];
         $source = $this->createMock(ConfigInterface::class);
@@ -68,9 +87,9 @@ final class ServiceProvidersTest extends TestCase
             'enabled' => $enabled, 'filename' => 'php://memory', 'processors' => [], 'timezone' => 'UTC',
         ]);
         $container = $this->createMock(ContainerInterface::class);
-        $entries = [ConfigInterface::class => $source];
-        $resolve = null;
-        $resolve = static function (string $id) use (&$resolve, &$entries, $container, $dependencies): object {
+        $entries   = [ConfigInterface::class => $source];
+        $resolve   = null;
+        $resolve   = static function (string $id) use (&$resolve, &$entries, $container, $dependencies): object {
             if (isset($entries[$id])) {
                 return $entries[$id];
             }
@@ -78,9 +97,10 @@ final class ServiceProvidersTest extends TestCase
                 return $resolve($dependencies['aliases'][$id]);
             }
             $factory = $dependencies['factories'][$id];
-            if (is_string($factory)) {
+            if (\is_string($factory)) {
                 $factory = new $factory();
             }
+
             return $entries[$id] = $factory($container);
         };
         $container->method('get')->willReturnCallback($resolve);
@@ -88,7 +108,7 @@ final class ServiceProvidersTest extends TestCase
             static fn (string $id): bool => isset($entries[$id]) || isset($dependencies['factories'][$id]),
         );
         $psrLogger = $container->get(LoggerInterface::class);
-        $concrete = $container->get(Logger::class);
+        $concrete  = $container->get(Logger::class);
         self::assertSame($psrLogger, $container->get('logger'));
         self::assertInstanceOf(Logger::class, $concrete);
         self::assertSame($psrLogger, $concrete);
@@ -98,7 +118,7 @@ final class ServiceProvidersTest extends TestCase
     }
 
     /** @return list<array{string, bool}> Both portable adapters in enabled and disabled modes. */
-    public static function loggerBindings(): array
+    public static function provideBindingsPreserveConcreteTypesAndEnabledIdentityCases(): iterable
     {
         return [['interop', true], ['interop', false], ['laminas', true], ['laminas', false]];
     }

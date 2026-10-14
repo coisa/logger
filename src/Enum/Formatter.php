@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * This file is part of coisa/logger.
  *
@@ -13,8 +15,6 @@
  * @license   https://opensource.org/licenses/MIT MIT License
  */
 
-declare(strict_types=1);
-
 namespace CoiSA\Logger\Enum;
 
 /** Finite formatter choices; configuration MUST NOT instantiate arbitrary classes. */
@@ -22,6 +22,7 @@ enum Formatter: string
 {
     /** Default Monolog line output. */
     case TEXT = 'text';
+
     /** One JSON record per line, without automatic stack traces. */
     case JSON = 'json';
 }
