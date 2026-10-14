@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * This file is part of coisa/logger.
  *
@@ -9,11 +11,9 @@
  * @link      https://github.com/coisa/logger
  * @link      https://12factor.net/logs
  *
- * @copyright Copyright (c) 2022-2024 Felipe Sayão Lobato Abreu <github@mentor.dev.br>
+ * @copyright Copyright (c) 2022-2026 Felipe Sayão Lobato Abreu <github@mentordosnerds.com>
  * @license   https://opensource.org/licenses/MIT MIT License
  */
-
-declare(strict_types=1);
 
 namespace CoiSA\Logger;
 
@@ -27,14 +27,12 @@ final class LaravelServiceProvider extends ServiceProvider
 {
     /**
      * Register any application services.
-     *
-     * @return void
      */
     public function register(): void
     {
-        $this->app->alias('logger', LoggerInterface::class);
-        $this->app->alias(LoggerInterface::class, Logger::class);
-        $this->app->singleton(Logger::class, new LoggerFactory());
-        $this->app->singleton(LoggerConfig::class, new LoggerConfigFactory());
+        $this->app->alias(LoggerInterface::class, 'logger');
+        $this->app->alias(Logger::class, LoggerInterface::class);
+        $this->app->singleton(Logger::class, (new LoggerFactory())(...));
+        $this->app->singleton(LoggerConfig::class, (new LoggerConfigFactory())(...));
     }
 }

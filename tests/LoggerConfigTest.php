@@ -2,16 +2,38 @@
 
 declare(strict_types=1);
 
+/**
+ * This file is part of coisa/logger.
+ *
+ * This source file is subject to the license that is bundled
+ * with this source code in the file LICENSE.
+ *
+ * @link      https://github.com/coisa/logger
+ * @link      https://12factor.net/logs
+ *
+ * @copyright Copyright (c) 2022-2026 Felipe Sayão Lobato Abreu <github@mentordosnerds.com>
+ * @license   https://opensource.org/licenses/MIT MIT License
+ */
+
 namespace CoiSA\Logger;
 
+use CoiSA\Logger\Enum\Formatter;
 use CoiSA\Logger\Enum\LogLevel;
+use CoiSA\Logger\Enum\Processor;
+use CoiSA\Logger\Support\AbstractProcessor;
+use CoiSA\Logger\Support\OptionalConstructorProcessor;
+use CoiSA\Logger\Support\PrivateConstructorProcessor;
+use CoiSA\Logger\Support\RequiredConstructorProcessor;
 use FastForward\Config\ConfigInterface;
+use Monolog\Processor\PsrLogMessageProcessor;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Unit coverage of validated immutable configuration.
  *
  * @coversDefaultClass \CoiSA\Logger\LoggerConfig
+ *
+ * @internal
  */
 final class LoggerConfigTest extends TestCase
 {
@@ -41,14 +63,153 @@ final class LoggerConfigTest extends TestCase
         self::assertNull($config->timezone);
     }
 
+    /** Verifies a zero filename is not mistaken for a disabled destination. */
+    public function testZeroFilenameRemainsEnabled(): void
+    {
+        $config = $this->configuration(['filename' => '0']);
+        self::assertTrue($config->enabled);
+        self::assertSame('0', $config->filename);
+    }
+
+    /**
+     * Verifies NUL destinations fail during configuration construction.
+     *
+     * @dataProvider provideDestinationsRejectNulBytesCases
+     *
+     * @param string $filename the malformed configured destination
+     */
+    public function testDestinationsRejectNulBytes(string $filename): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('logger.filename');
+        $this->configuration(['filename' => $filename]);
+    }
+
+    /** @return list<array{string}> Pure, whitespace-mixed and nonblank NUL destinations. */
+    public static function provideDestinationsRejectNulBytesCases(): iterable
+    {
+        return [["\0"], [" \t\0\r\n\v "], ["bad\0path"]];
+    }
+
+    /** Verifies readonly typed configuration exposes the selected finite values. */
+    public function testProcessorAndFormatterSelectionsAreTyped(): void
+    {
+        $config = $this->configuration([
+            'processors' => [PsrLogMessageProcessor::class], 'formatter' => 'json',
+        ]);
+        self::assertSame([PsrLogMessageProcessor::class], $config->processors);
+        self::assertSame(Formatter::JSON, $config->formatter);
+    }
+
+    /** Verifies legacy defaults and explicit processor opt-out remain distinct. */
+    public function testNewOptionsPreserveLegacyDefaults(): void
+    {
+        $config = $this->configuration([]);
+        self::assertTrue($config->enabled);
+        self::assertNull($config->processors);
+        self::assertSame([], $this->configuration(['processors' => []])->processors);
+    }
+
+    /**
+     * Verifies opt-in settings fail closed before filesystem access.
+     *
+     * @dataProvider provideInvalidNewSettingsCases
+     *
+     * @param array<string, mixed> $options invalid values
+     */
+    public function testInvalidNewSettings(array $options): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->configuration($options);
+    }
+
+    /** @return list<array{array<string, mixed>}> Invalid opt-in values. */
+    public static function provideInvalidNewSettingsCases(): iterable
+    {
+        return [
+            [['enabled' => 'false']],
+            [['processors' => ['Unknown\Processor']]], [['processors' => 'psr_message']],
+            [['processors' => [Processor::PSR_MESSAGE, Processor::PSR_MESSAGE]]], [['processors' => [false]]],
+            [['processors' => [PsrLogMessageProcessor::class, mb_strtolower(PsrLogMessageProcessor::class)]]],
+            [['processors' => [0 => Processor::PSR_MESSAGE, 2 => Processor::PSR_MESSAGE]]],
+            [['processors' => ['psr_message']]], [['processors' => [\stdClass::class]]],
+            [['formatter' => 'xml']],
+        ];
+    }
+
+    /** Verifies an ordinary local filename with a colon is not mistaken for a wrapper. */
+    public function testAcceptsLocalColonFilename(): void
+    {
+        $config = $this->configuration(['filename' => 'app:debug.log']);
+        self::assertTrue($config->enabled);
+        self::assertSame('app:debug.log', $config->filename);
+    }
+
+    /** Verifies typed enum selections remain immutable normalized configuration values. */
+    public function testAcceptsProcessorEnumCases(): void
+    {
+        self::assertSame(
+            [PsrLogMessageProcessor::class],
+            $this->configuration(['processors' => [Processor::PSR_MESSAGE]])->processors,
+        );
+    }
+
+    /**
+     * Verifies invalid constructors fail when the configuration is normalized.
+     *
+     * @dataProvider provideRejectsNonConstructibleProcessorsCases
+     *
+     * @param class-string $processor the invalid processor implementation
+     */
+    public function testRejectsNonConstructibleProcessors(string $processor): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('logger.processors classes must be instantiable without arguments.');
+        $this->configuration(['processors' => [$processor]]);
+    }
+
+    /** @return list<array{class-string}> Abstract, argument-requiring and inaccessible constructors. */
+    public static function provideRejectsNonConstructibleProcessorsCases(): iterable
+    {
+        return [[AbstractProcessor::class], [RequiredConstructorProcessor::class], [PrivateConstructorProcessor::class]];
+    }
+
+    /** Verifies optional constructor parameters do not restrict custom implementations. */
+    public function testAcceptsProcessorWithOptionalConstructorArguments(): void
+    {
+        self::assertSame(
+            [OptionalConstructorProcessor::class],
+            $this->configuration(['processors' => [OptionalConstructorProcessor::class]])->processors,
+        );
+    }
+
+    /** Verifies constructed processors retain their identities and may use required arguments. */
+    public function testAcceptsDistinctProcessorInstancesOfTheSameClass(): void
+    {
+        $first  = new RequiredConstructorProcessor('first');
+        $second = new RequiredConstructorProcessor('second');
+        $config = $this->configuration(['processors' => [$first, $second]]);
+        self::assertSame($first, $config->processors[0]);
+        self::assertSame($second, $config->processors[1]);
+    }
+
+    /** Verifies the same processor instance cannot accidentally run twice. */
+    public function testRejectsDuplicateProcessorInstances(): void
+    {
+        $processor = new RequiredConstructorProcessor('duplicate');
+        $this->expectException(\InvalidArgumentException::class);
+        $this->configuration(['processors' => [$processor, $processor]]);
+    }
+
     /**
      * Verifies canonical strings against independently specified enum cases.
      *
-     * @param string $value The configured level name.
-     * @param LogLevel $expected The expected enum case.
+     * @param string   $value    the configured level name
+     * @param LogLevel $expected the expected enum case
      *
      * @covers ::__construct
-     * @dataProvider canonicalLevels
+     *
+     * @dataProvider provideCanonicalLevelCases
      */
     public function testCanonicalLevel(string $value, LogLevel $expected): void
     {
@@ -58,9 +219,9 @@ final class LoggerConfigTest extends TestCase
     /**
      * Provides every canonical PSR-3 level.
      *
-     * @return list<array{string, LogLevel}> Names and expected cases.
+     * @return list<array{string, LogLevel}> names and expected cases
      */
-    public static function canonicalLevels(): array
+    public static function provideCanonicalLevelCases(): iterable
     {
         return [
             ['debug', LogLevel::DEBUG], ['info', LogLevel::INFO],
@@ -132,11 +293,12 @@ final class LoggerConfigTest extends TestCase
     /**
      * Verifies invalid non-null settings fail during construction.
      *
-     * @param mixed $options The invalid section or settings.
-     * @param string $field The expected diagnostic field.
+     * @param mixed  $options the invalid section or settings
+     * @param string $field   the expected diagnostic field
      *
      * @covers ::__construct
-     * @dataProvider invalidOptions
+     *
+     * @dataProvider provideInvalidSettingsCases
      */
     public function testInvalidSettings(mixed $options, string $field): void
     {
@@ -148,9 +310,9 @@ final class LoggerConfigTest extends TestCase
     /**
      * Supplies invalid types, aliases and malicious string values.
      *
-     * @return list<array{mixed, string}> Invalid settings and diagnostics.
+     * @return list<array{mixed, string}> invalid settings and diagnostics
      */
-    public static function invalidOptions(): array
+    public static function provideInvalidSettingsCases(): iterable
     {
         return [
             ['not-an-array', 'logger must be an array'],
@@ -167,9 +329,9 @@ final class LoggerConfigTest extends TestCase
     /**
      * Constructs the SUT with a mocked configuration dependency.
      *
-     * @param mixed $options The section supplied by the configuration mock.
+     * @param mixed $options the section supplied by the configuration mock
      *
-     * @return LoggerConfig The normalized value under test.
+     * @return LoggerConfig the normalized value under test
      */
     private function configuration(mixed $options): LoggerConfig
     {
