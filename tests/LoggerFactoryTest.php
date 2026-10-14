@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace CoiSA\Logger;
 
 use CoiSA\Logger\Enum\LogLevel as ConfiguredLogLevel;
+use CoiSA\Logger\Enum\Formatter;
+use CoiSA\Logger\Enum\Processor;
 use CoiSA\Logger\Support\MemoryLogStream;
 use FastForward\Config\ConfigInterface;
 use PHPUnit\Framework\TestCase;
@@ -243,7 +245,7 @@ final class LoggerFactoryTest extends TestCase
         $container = $this->createMock(ContainerInterface::class);
         $container->method('get')->with(LoggerConfig::class)->willReturn(
             $this->configuration([
-                'filename' => self::DESTINATION, 'processors' => ['psr_message'],
+                'filename' => self::DESTINATION, 'processors' => [Processor::PSR_MESSAGE],
                 'formatter' => 'json', 'timezone' => 'UTC',
             ]),
         );
@@ -267,6 +269,49 @@ final class LoggerFactoryTest extends TestCase
         $container->method('has')->with(\DateTimeZone::class)->willReturn(false);
         (new LoggerFactory())($container)->debug('default debug marker');
         self::assertStringContainsString('default debug marker', MemoryLogStream::$records);
+    }
+
+    /** Verifies the shared static API accepts explicit presentation and processor choices. */
+    public function testStaticCreationSupportsSelectedProcessorsAndFormatter(): void
+    {
+        $logger = LoggerFactory::createLogger(
+            ConfiguredLogLevel::INFO,
+            self::DESTINATION,
+            new \DateTimeZone('UTC'),
+            [Processor::PSR_MESSAGE],
+            Formatter::JSON,
+        );
+        $logger->debug('hidden');
+        $logger->info('unit {job}', ['job' => 'synthetic']);
+        $record = json_decode(MemoryLogStream::$records, true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('unit synthetic', $record['message']);
+        self::assertSame([], $record['extra']);
+    }
+
+    /** Verifies enabled concrete resolution retains the shared PSR logger identity. */
+    public function testEnabledConcreteEntryReusesPsrLogger(): void
+    {
+        $logger = LoggerFactory::createLogger(filename: self::DESTINATION, processors: []);
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects(self::exactly(2))->method('get')->willReturnMap([
+            [LoggerConfig::class, $this->configuration([])],
+            [LoggerInterface::class, $logger],
+        ]);
+        self::assertSame($logger, LoggerFactory::createConcrete($container));
+    }
+
+    /** Verifies disabled concrete injection remains typed and withLevel never enables output. */
+    public function testDisabledConcreteEntrySupportsWithLevelWithoutOutput(): void
+    {
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects(self::once())->method('get')->with(LoggerConfig::class)->willReturn(
+            $this->configuration(['enabled' => false, 'filename' => self::DESTINATION]),
+        );
+        $container->expects(self::never())->method('has');
+        $logger = LoggerFactory::createConcrete($container);
+        self::assertInstanceOf(Logger::class, $logger);
+        $logger->withLevel('debug')->emergency('must not be written');
+        self::assertSame('', MemoryLogStream::$records);
     }
 
     /**

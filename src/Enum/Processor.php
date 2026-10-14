@@ -17,39 +17,56 @@ declare(strict_types=1);
 
 namespace CoiSA\Logger\Enum;
 
-/** Explicit processor identifiers; metadata-producing processors require informed selection. */
+use CoiSA\Logger\StopwatchTimerProcessor;
+use Monolog\Processor\LoadAverageProcessor;
+use Monolog\Processor\MemoryPeakUsageProcessor;
+use Monolog\Processor\MemoryUsageProcessor;
+use Monolog\Processor\ProcessIdProcessor;
+use Monolog\Processor\PsrLogMessageProcessor;
+use Monolog\Processor\UidProcessor;
+use Monolog\Processor\WebProcessor;
+use MonologProcessorCollection\BacktraceProcessor;
+use MonologProcessorCollection\ClientIpProcessor;
+use MonologProcessorCollection\IsHttpsProcessor;
+use MonologProcessorCollection\ProtocolVersionProcessor;
+use MonologProcessorCollection\RequestSizeProcessor;
+use MonologProcessorCollection\SapiNameProcessor;
+use MonologProcessorCollection\SessionIdProcessor;
+use MonologProcessorCollection\UuidProcessor;
+
+/** Allowlisted processor classes in the legacy default processing order. */
 enum Processor: string
 {
     /** Explicit psr message processing. */
-    case PSR_MESSAGE = 'psr_message';
+    case PSR_MESSAGE = PsrLogMessageProcessor::class;
     /** Explicit sapi name processing. */
-    case SAPI_NAME = 'sapi_name';
+    case SAPI_NAME = SapiNameProcessor::class;
     /** Explicit process id processing. */
-    case PROCESS_ID = 'process_id';
+    case PROCESS_ID = ProcessIdProcessor::class;
     /** Explicit uid processing. */
-    case UID = 'uid';
+    case UID = UidProcessor::class;
     /** Explicit uuid processing. */
-    case UUID = 'uuid';
+    case UUID = UuidProcessor::class;
     /** Explicit protocol version processing. */
-    case PROTOCOL_VERSION = 'protocol_version';
+    case PROTOCOL_VERSION = ProtocolVersionProcessor::class;
     /** Explicit session id processing. */
-    case SESSION_ID = 'session_id';
+    case SESSION_ID = SessionIdProcessor::class;
     /** Explicit request size processing. */
-    case REQUEST_SIZE = 'request_size';
+    case REQUEST_SIZE = RequestSizeProcessor::class;
     /** Explicit client ip processing. */
-    case CLIENT_IP = 'client_ip';
+    case CLIENT_IP = ClientIpProcessor::class;
     /** Explicit is https processing. */
-    case IS_HTTPS = 'is_https';
+    case IS_HTTPS = IsHttpsProcessor::class;
     /** Explicit web processing. */
-    case WEB = 'web';
+    case WEB = WebProcessor::class;
     /** Explicit backtrace processing. */
-    case BACKTRACE = 'backtrace';
+    case BACKTRACE = BacktraceProcessor::class;
     /** Explicit memory usage processing. */
-    case MEMORY_USAGE = 'memory_usage';
+    case MEMORY_USAGE = MemoryUsageProcessor::class;
     /** Explicit memory peak usage processing. */
-    case MEMORY_PEAK_USAGE = 'memory_peak_usage';
+    case MEMORY_PEAK_USAGE = MemoryPeakUsageProcessor::class;
     /** Explicit load average processing. */
-    case LOAD_AVERAGE = 'load_average';
+    case LOAD_AVERAGE = LoadAverageProcessor::class;
     /** Explicit stopwatch timer processing. */
-    case STOPWATCH_TIMER = 'stopwatch_timer';
+    case STOPWATCH_TIMER = StopwatchTimerProcessor::class;
 }

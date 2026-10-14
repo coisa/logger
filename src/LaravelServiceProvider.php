@@ -32,9 +32,9 @@ final class LaravelServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->alias('logger', LoggerInterface::class);
-        $this->app->alias(LoggerInterface::class, Logger::class);
-        $this->app->singleton(Logger::class, new LoggerFactory());
+        $this->app->alias(LoggerInterface::class, 'logger');
+        $this->app->singleton(LoggerInterface::class, new LoggerFactory());
+        $this->app->singleton(Logger::class, [LoggerFactory::class, 'createConcrete']);
         $this->app->singleton(LoggerConfig::class, new LoggerConfigFactory());
     }
 }

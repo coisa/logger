@@ -21,24 +21,10 @@ use CoiSA\Logger\Enum\LogLevel as ConfiguredLogLevel;
 use CoiSA\Logger\Enum\Formatter;
 use CoiSA\Logger\Enum\Processor;
 use Monolog\Formatter\JsonFormatter;
+use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger as MonologLogger;
-use Monolog\Processor\LoadAverageProcessor;
-use Monolog\Processor\MemoryPeakUsageProcessor;
-use Monolog\Processor\MemoryUsageProcessor;
-use Monolog\Processor\ProcessIdProcessor;
 use Monolog\Processor\ProcessorInterface;
-use Monolog\Processor\PsrLogMessageProcessor;
-use Monolog\Processor\UidProcessor;
-use Monolog\Processor\WebProcessor;
-use MonologProcessorCollection\BacktraceProcessor;
-use MonologProcessorCollection\ClientIpProcessor;
-use MonologProcessorCollection\IsHttpsProcessor;
-use MonologProcessorCollection\ProtocolVersionProcessor;
-use MonologProcessorCollection\RequestSizeProcessor;
-use MonologProcessorCollection\SapiNameProcessor;
-use MonologProcessorCollection\SessionIdProcessor;
-use MonologProcessorCollection\UuidProcessor;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
@@ -72,17 +58,35 @@ final class LoggerFactory
         if (!$config->enabled) {
             return new NullLogger();
         }
-        $handler = new StreamHandler($config->filename, $config->level->value);
-        if ($config->formatter === Formatter::JSON) {
-            $handler->setFormatter(new JsonFormatter(includeStacktraces: false));
-        }
-        return new Logger(new MonologLogger(
-            name: (string) gethostname(),
-            handlers: [$handler],
-            processors: $config->processors === null ? self::getDefaultProcessors()
-                : array_map(self::createProcessor(...), $config->processors),
+        return self::createLogger(
+            level: $config->level,
+            filename: $config->filename,
             timezone: $config->timezone ?? $this->resolveContainerTimezone($container),
-        ));
+            processors: $config->processors,
+            formatter: $config->formatter,
+        );
+    }
+
+    /**
+     * Preserves the concrete entry type for consumers using Logger::withLevel().
+     *
+     * Enabled entries reuse the shared PSR logger. Only an explicit disabled
+     * concrete resolution constructs a no-op Monolog wrapper; the PSR entry
+     * still returns NullLogger directly.
+     *
+     * @param ContainerInterface $container The provider's container.
+     * @return Logger The typed shared logger or a disabled concrete wrapper.
+     * @throws \InvalidArgumentException When the configuration service is invalid.
+     */
+    public static function createConcrete(ContainerInterface $container): Logger
+    {
+        $config = $container->get(LoggerConfig::class);
+        if (!$config instanceof LoggerConfig) {
+            throw new \InvalidArgumentException('The logger configuration service must be a LoggerConfig instance.');
+        }
+        return $config->enabled
+            ? $container->get(LoggerInterface::class)
+            : self::createLogger(filename: $config->filename, enabled: false);
     }
 
     /**
@@ -122,8 +126,11 @@ final class LoggerFactory
      * @param string|ConfiguredLogLevel $level A legacy Monolog level string or a canonical PSR-3 enum.
      * @param string $filename The output stream or file path for logs.
      * @param \DateTimeZone|null $timezone The timezone for log timestamps.
+     * @param list<Processor>|null $processors Selected cases, or null for legacy defaults.
+     * @param Formatter $formatter The output representation.
+     * @param bool $enabled Whether this concrete wrapper may emit records.
      *
-     * @return LoggerInterface The configured Logger instance.
+     * @return Logger The configured concrete Logger instance.
      *
      * @throws \InvalidArgumentException When Monolog rejects the level or output stream.
      */
@@ -131,12 +138,18 @@ final class LoggerFactory
         string|ConfiguredLogLevel $level = LogLevel::DEBUG,
         string $filename = LoggerConfig::DEFAULT_FILENAME,
         ?\DateTimeZone $timezone = null,
-    ): LoggerInterface {
+        ?array $processors = null,
+        Formatter $formatter = Formatter::TEXT,
+        bool $enabled = true,
+    ): Logger {
         $monolog = self::createMonologLogger(
             name: (string) gethostname(),
             level: $level instanceof ConfiguredLogLevel ? $level->value : $level,
             filename: $filename,
             timezone: $timezone,
+            processors: $processors,
+            formatter: $formatter,
+            enabled: $enabled,
         );
 
         return new Logger($monolog);
@@ -152,6 +165,9 @@ final class LoggerFactory
      * @param string $level The minimum logging level (e.g., DEBUG, INFO).
      * @param string $filename The output stream or file path for logs.
      * @param \DateTimeZone|null $timezone The timezone for log timestamps.
+     * @param list<Processor>|null $processors Selected cases, or null for legacy defaults.
+     * @param Formatter $formatter The output representation.
+     * @param bool $enabled Whether records may reach a stream.
      *
      * @return MonologLogger The configured Monolog logger instance.
      */
@@ -160,34 +176,23 @@ final class LoggerFactory
         string $level = LogLevel::DEBUG,
         string $filename = LoggerConfig::DEFAULT_FILENAME,
         ?\DateTimeZone $timezone = null,
+        ?array $processors = null,
+        Formatter $formatter = Formatter::TEXT,
+        bool $enabled = true,
     ): MonologLogger {
+        $handler = $enabled ? new StreamHandler($filename, $level) : new NullHandler();
+        if ($enabled && $formatter === Formatter::JSON) {
+            $handler->setFormatter(new JsonFormatter(includeStacktraces: false));
+        }
         return new MonologLogger(
             name: $name,
-            handlers: self::getDefaultHandlers($level, $filename),
-            processors: self::getDefaultProcessors(),
+            handlers: [$handler],
+            processors: $enabled ? array_map(
+                static fn (Processor $processor): ProcessorInterface => new ($processor->value)(),
+                $processors ?? self::getDefaultProcessors(),
+            ) : [],
             timezone: $timezone,
         );
-    }
-
-    /**
-     * Returns the default handlers for the logger.
-     *
-     * This method SHALL configure and return an array of default handlers,
-     * including a `StreamHandler` pointing to the specified stream or file.
-     *
-     * @param string $level The minimum logging level (e.g., DEBUG, INFO).
-     * @param string $filename The output stream or file path for logs.
-     *
-     * @return array<StreamHandler> The default handlers.
-     */
-    private static function getDefaultHandlers(string $level, string $filename = LoggerConfig::DEFAULT_FILENAME): array
-    {
-        return [
-            new StreamHandler(
-                stream: $filename,
-                level: $level,
-            ),
-        ];
     }
 
     /**
@@ -196,55 +201,10 @@ final class LoggerFactory
      * This method SHALL configure and return an array of default processors
      * for enriching log entries with metadata (e.g., process ID, memory usage).
      *
-     * @return array<callable|ProcessorInterface> The default processors.
+     * @return list<Processor> All cases in the legacy default order.
      */
     private static function getDefaultProcessors(): array
     {
-        return [
-            new PsrLogMessageProcessor(),
-            new SapiNameProcessor(),
-            new ProcessIdProcessor(),
-            new UidProcessor(),
-            new UuidProcessor(),
-            new ProtocolVersionProcessor(),
-            new SessionIdProcessor(),
-            new RequestSizeProcessor(),
-            new ClientIpProcessor(),
-            new IsHttpsProcessor(),
-            new WebProcessor(),
-            new BacktraceProcessor(),
-            new MemoryUsageProcessor(),
-            new MemoryPeakUsageProcessor(),
-            new LoadAverageProcessor(),
-            new StopwatchTimerProcessor(),
-        ];
-    }
-
-    /**
-     * Instantiates only an explicitly allowlisted processor.
-     *
-     * @param Processor $processor The normalized configured identifier.
-     * @return ProcessorInterface The selected processor.
-     */
-    private static function createProcessor(Processor $processor): ProcessorInterface
-    {
-        return match ($processor) {
-            Processor::PSR_MESSAGE => new PsrLogMessageProcessor(),
-            Processor::SAPI_NAME => new SapiNameProcessor(),
-            Processor::PROCESS_ID => new ProcessIdProcessor(),
-            Processor::UID => new UidProcessor(),
-            Processor::UUID => new UuidProcessor(),
-            Processor::PROTOCOL_VERSION => new ProtocolVersionProcessor(),
-            Processor::SESSION_ID => new SessionIdProcessor(),
-            Processor::REQUEST_SIZE => new RequestSizeProcessor(),
-            Processor::CLIENT_IP => new ClientIpProcessor(),
-            Processor::IS_HTTPS => new IsHttpsProcessor(),
-            Processor::WEB => new WebProcessor(),
-            Processor::BACKTRACE => new BacktraceProcessor(),
-            Processor::MEMORY_USAGE => new MemoryUsageProcessor(),
-            Processor::MEMORY_PEAK_USAGE => new MemoryPeakUsageProcessor(),
-            Processor::LOAD_AVERAGE => new LoadAverageProcessor(),
-            Processor::STOPWATCH_TIMER => new StopwatchTimerProcessor(),
-        };
+        return Processor::cases();
     }
 }

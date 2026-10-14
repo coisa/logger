@@ -159,7 +159,7 @@ final readonly class LoggerConfig
      *
      * @param mixed $processors The selection, or null for legacy defaults.
      * @return list<Processor>|null The normalized enum selection.
-     * @throws \InvalidArgumentException When IDs, list shape or duplicates are invalid.
+     * @throws \InvalidArgumentException When classes, list shape or duplicates are invalid.
      */
     private static function resolveProcessors(mixed $processors): ?array
     {
@@ -171,7 +171,7 @@ final readonly class LoggerConfig
         }
         $result = [];
         foreach ($processors as $id) {
-            $processor = is_string($id) ? Processor::tryFrom($id) : null;
+            $processor = $id instanceof Processor ? $id : (is_string($id) ? Processor::tryFrom($id) : null);
             if ($processor === null || in_array($processor, $result, true)) {
                 throw new \InvalidArgumentException('logger.processors contains an unknown or duplicate identifier.');
             }

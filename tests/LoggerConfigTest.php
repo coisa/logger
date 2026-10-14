@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CoiSA\Logger;
 
 use CoiSA\Logger\Enum\LogLevel;
+use CoiSA\Logger\Enum\Processor;
 use FastForward\Config\ConfigInterface;
 use PHPUnit\Framework\TestCase;
 
@@ -71,7 +72,9 @@ final class LoggerConfigTest extends TestCase
     /** Verifies readonly typed configuration exposes the selected finite values. */
     public function testProcessorAndFormatterSelectionsAreTyped(): void
     {
-        $config = $this->configuration(['processors' => ['psr_message'], 'formatter' => 'json']);
+        $config = $this->configuration([
+            'processors' => [\Monolog\Processor\PsrLogMessageProcessor::class], 'formatter' => 'json',
+        ]);
         self::assertSame([\CoiSA\Logger\Enum\Processor::PSR_MESSAGE], $config->processors);
         self::assertSame(\CoiSA\Logger\Enum\Formatter::JSON, $config->formatter);
     }
@@ -103,8 +106,9 @@ final class LoggerConfigTest extends TestCase
         return [
             [['enabled' => 'false']],
             [['processors' => ['Unknown\\Processor']]], [['processors' => 'psr_message']],
-            [['processors' => ['psr_message', 'psr_message']]], [['processors' => [false]]],
-            [['processors' => [0 => 'psr_message', 2 => 'psr_message']]],
+            [['processors' => [Processor::PSR_MESSAGE, Processor::PSR_MESSAGE]]], [['processors' => [false]]],
+            [['processors' => [0 => Processor::PSR_MESSAGE, 2 => Processor::PSR_MESSAGE]]],
+            [['processors' => ['psr_message']]], [['processors' => [\stdClass::class]]],
             [['formatter' => 'xml']],
         ];
     }
@@ -115,6 +119,15 @@ final class LoggerConfigTest extends TestCase
         $config = $this->configuration(['filename' => 'app:debug.log']);
         self::assertTrue($config->enabled);
         self::assertSame('app:debug.log', $config->filename);
+    }
+
+    /** Verifies typed enum selections remain immutable normalized configuration values. */
+    public function testAcceptsProcessorEnumCases(): void
+    {
+        self::assertSame(
+            [Processor::PSR_MESSAGE],
+            $this->configuration(['processors' => [Processor::PSR_MESSAGE]])->processors,
+        );
     }
 
     /**

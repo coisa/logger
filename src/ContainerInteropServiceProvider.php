@@ -35,8 +35,8 @@ final class ContainerInteropServiceProvider implements ServiceProviderInterface
     {
         return [
             'logger'               => $this->createAliasCallableFactory(LoggerInterface::class),
-            LoggerInterface::class => $this->createAliasCallableFactory(Logger::class),
-            Logger::class          => new LoggerFactory(),
+            LoggerInterface::class => new LoggerFactory(),
+            Logger::class          => [LoggerFactory::class, 'createConcrete'],
             LoggerConfig::class    => new LoggerConfigFactory(),
         ];
     }
