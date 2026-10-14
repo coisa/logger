@@ -41,53 +41,25 @@ final class LoggerConfigTest extends TestCase
         self::assertNull($config->timezone);
     }
 
-    /** Verifies opt-in file-only defaults cannot fall back to console output. */
-    public function testFileOnlyWithoutDestinationDisablesLogging(): void
-    {
-        $config = $this->configuration(['file_only' => true]);
-        self::assertFalse($config->enabled);
-        self::assertSame('', $config->filename);
-        self::assertSame([], $config->processors);
-    }
-
     /** Verifies a zero filename is not mistaken for a disabled destination. */
     public function testZeroFilenameRemainsEnabled(): void
     {
-        $config = $this->configuration(['file_only' => true, 'filename' => '0']);
+        $config = $this->configuration(['filename' => '0']);
         self::assertTrue($config->enabled);
         self::assertSame('0', $config->filename);
     }
 
     /**
-     * Verifies null or blank file-only destinations cannot enable a stdout fallback.
-     *
-     * @dataProvider disabledDestinations
-     * @param mixed $filename The optional configured destination.
-     */
-    public function testOptionalFileDestinations(mixed $filename): void
-    {
-        $config = $this->configuration(['file_only' => true, 'filename' => $filename, 'enabled' => true]);
-        self::assertFalse($config->enabled);
-        self::assertSame('', $config->filename);
-    }
-
-    /** @return list<array{mixed}> Values representing absent destinations. */
-    public static function disabledDestinations(): array
-    {
-        return [[null], [''], ['  '], ["\t\n\r\v "]];
-    }
-
-    /**
-     * Verifies file-only NUL destinations fail during configuration construction.
+     * Verifies NUL destinations fail during configuration construction.
      *
      * @dataProvider nulFileDestinations
      * @param string $filename The malformed configured destination.
      */
-    public function testFileOnlyDestinationsRejectNulBytes(string $filename): void
+    public function testDestinationsRejectNulBytes(string $filename): void
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('logger.filename');
-        $this->configuration(['file_only' => true, 'filename' => $filename]);
+        $this->configuration(['filename' => $filename]);
     }
 
     /** @return list<array{string}> Pure, whitespace-mixed and nonblank NUL destinations. */
@@ -109,7 +81,6 @@ final class LoggerConfigTest extends TestCase
     {
         $config = $this->configuration([]);
         self::assertTrue($config->enabled);
-        self::assertFalse($config->fileOnly);
         self::assertNull($config->processors);
         self::assertSame([], $this->configuration(['processors' => []])->processors);
     }
@@ -130,11 +101,7 @@ final class LoggerConfigTest extends TestCase
     public static function invalidNewOptions(): array
     {
         return [
-            [['enabled' => 'false']], [['file_only' => 1]],
-            [['file_only' => true, 'filename' => 'php://stdout']],
-            [['file_only' => true, 'filename' => 'file:///tmp/debug']],
-            [['file_only' => true, 'filename' => '1x://records']],
-            [['file_only' => true, 'filename' => 'data:text/plain,record']],
+            [['enabled' => 'false']],
             [['processors' => ['Unknown\\Processor']]], [['processors' => 'psr_message']],
             [['processors' => ['psr_message', 'psr_message']]], [['processors' => [false]]],
             [['processors' => [0 => 'psr_message', 2 => 'psr_message']]],
@@ -143,9 +110,9 @@ final class LoggerConfigTest extends TestCase
     }
 
     /** Verifies an ordinary local filename with a colon is not mistaken for a wrapper. */
-    public function testFileOnlyAcceptsLocalColonFilename(): void
+    public function testAcceptsLocalColonFilename(): void
     {
-        $config = $this->configuration(['file_only' => true, 'filename' => 'app:debug.log']);
+        $config = $this->configuration(['filename' => 'app:debug.log']);
         self::assertTrue($config->enabled);
         self::assertSame('app:debug.log', $config->filename);
     }

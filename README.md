@@ -36,13 +36,13 @@ $config = new ArrayConfig([
 
 All keys are optional. Without a configuration service or section, behavior
 remains `debug`, `php://stdout`, and the container's `DateTimeZone` service (or
-the process default timezone when that service is absent). In the default stream
-mode, missing and `null` settings use the same defaults: `debug` for level,
+the process default timezone when that service is absent). Missing and `null`
+settings use the same defaults: `debug` for level,
 `LoggerConfig::DEFAULT_FILENAME` for filename, and the lazily resolved
 container/process fallback for timezone. A non-null timezone name or
 `DateTimeZone` instance takes precedence over the container for enabled logging.
-See [Optional private file logging](#optional-private-file-logging) for file-only
-defaults and disabled logging.
+See [Optional logging and record configuration](#optional-logging-and-record-configuration)
+for disabled logging, formatters and processors.
 
 `LoggerConfig` is a readonly snapshot constructed from `ConfigInterface`. Its
 public `level`, `filename` and `timezone` properties contain validated values;
@@ -51,12 +51,12 @@ public `level`, `filename` and `timezone` properties contain validated values;
 configuration and logger creation APIs.
 
 Non-null configured levels accept only the eight canonical lowercase PSR-3 names. Invalid types,
-unknown levels/timezones, empty stream-mode paths and paths containing NUL bytes fail during
+unknown levels/timezones, empty paths and paths containing NUL bytes fail during
 factory resolution with `InvalidArgumentException`. The factory does not open
 the stream until a record passes the level filter; file/permission failures are
 reported when writing. Configuration must be application-owned and trusted.
-The opt-in private-file policy below adds destination checks, not a path
-sandbox, retention or credential redaction.
+Destinations and their permissions are administered by the application/operator;
+the library does not impose a filesystem policy or redact credentials.
 
 The Laminas `ConfigProvider`, container-interop provider and Laravel adapter
 register `LoggerConfigFactory` for `LoggerConfig`, alongside the logger factory
@@ -70,16 +70,15 @@ calls do not resolve configuration. Applications may
 route diagnostic files independently of console verbosity; avoid logging
 secrets or complete request/event objects.
 
-### Optional private file logging
+### Optional logging and record configuration
 
-The provider can supply a disabled logger, or a private file-only logger, without
-application-specific handlers. These options are additive: omitting them keeps
+The provider can supply a disabled logger or configure Monolog's standard
+`StreamHandler`. These options are additive: omitting them keeps
 the 2.0 stream/processor defaults and the static creation API unchanged.
 
 ~~~php
 'logger' => [
     'enabled' => true,
-    'file_only' => true,
     'filename' => '/var/log/my-application/debug.log',
     'level' => 'debug',
     'timezone' => 'UTC',
@@ -88,42 +87,21 @@ the 2.0 stream/processor defaults and the static creation API unchanged.
 ],
 ~~~
 
-With `file_only: true`, an absent, null, empty or whitespace-only filename
-disables logging; the string `"0"` is a valid relative filename. A provided
-destination MUST be a local path: PHP stream wrapper syntax, including
-`php://stdout`, `php://stderr` and `file://`, is rejected. `enabled: false` also
-disables logging. The disabled service remains a `CoiSA\Logger\Logger` backed by
-Monolog's NullHandler; it writes nothing, adds no metadata, constructs no sink
-or processors and uses fixed UTC without consulting the container or process timezone.
-Ordinary local names such as `app:debug.log` remain valid; actual PHP wrapper
-syntax (including `data:` and schemes starting with digits) is rejected.
+Set `enabled: false` to return `Psr\Log\NullLogger`. It discards records without
+constructing a Monolog backend, handler or processors, or consulting the
+container's timezone fallback. Consumers should depend on `LoggerInterface`, not
+the concrete `CoiSA\Logger\Logger` implementation, when logging is optional.
 
-File-only mode uses a constant `application` channel and no processors by
-default. The parent directory must already exist, be controlled by the
-application and not be group/world-writable. Parent aliases are freshly
-canonicalized for each record without following the final file. Directories,
-devices, final symlinks and multiply linked files are rejected. Creation is
-exclusive with a temporary private umask, which is restored even on failure.
-Opening an existing destination
-never recreates it if it disappears before opening. Every open/reopen checks
-`chmod(0600)` success and actual descriptor permissions. Every append (including
-partial writes) verifies regular-file status, effective 0600 and matching
-path/descriptor device and inode, then seeks to EOF and writes while holding an
-exclusive advisory lock. Seek, lock, permission or write failures close the
-descriptor and raise UnexpectedValueException, including failed lock release.
-If writing and lock release both fail, the original write error is preserved.
-Failures do not trigger a stdout fallback or automatic retry. Resets close the
-file, and changed file identities require revalidation.
-
-These checks target local POSIX-style filesystems with trustworthy permission
-metadata and advisory locking. This is **not** a sandbox against hostile
-same-UID processes, mutable/untrusted ancestor directories or ACLs that grant
-access beyond mode bits. Use a controlled log directory; the library does not
-create directories, administer ownership, implement retention or redact secrets.
+Enabled logging uses `StreamHandler` directly. File paths and PHP stream wrappers
+are supported; missing/null filenames retain the `php://stdout` default, and
+`"0"` is a valid relative filename. File creation, appending and write failures
+follow Monolog's behavior. Provision appropriate directory access and file
+permissions outside this library. No strict mode-bit, symlink, inode or locking
+policy is promised.
 
 `processors` accepts a list of finite identifiers, not class names or callables.
 An explicit empty list disables all processors. Missing/null selections keep
-legacy defaults in stream mode and no processors in file-only mode. Available
+legacy defaults. Available
 identifiers are:
 
 - `psr_message`, `sapi_name`, `process_id`, `uid`, `uuid`;
@@ -137,7 +115,7 @@ caller-supplied messages/context; never pass credentials or entire private
 event/request objects. Unknown/duplicate processor IDs and invalid option types
 fail during immutable configuration construction.
 
-The additional readonly properties are `enabled`, `fileOnly`, `processors`
+The additional readonly properties are `enabled`, `processors`
 (normalized Processor enum list, or null for legacy defaults), and `formatter`
 (Formatter enum). Configuration remains registered by all three existing
 service-provider adapters; no extra application service registration is needed.

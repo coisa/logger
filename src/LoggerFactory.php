@@ -20,10 +20,7 @@ namespace CoiSA\Logger;
 use CoiSA\Logger\Enum\LogLevel as ConfiguredLogLevel;
 use CoiSA\Logger\Enum\Formatter;
 use CoiSA\Logger\Enum\Processor;
-use CoiSA\Logger\Handler\FileOperations;
-use CoiSA\Logger\Handler\PrivateFileHandler;
 use Monolog\Formatter\JsonFormatter;
-use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger as MonologLogger;
 use Monolog\Processor\LoadAverageProcessor;
@@ -45,6 +42,7 @@ use MonologProcessorCollection\UuidProcessor;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
+use Psr\Log\NullLogger;
 
 /**
  * Factory for creating Logger instances.
@@ -53,15 +51,6 @@ use Psr\Log\LogLevel;
  */
 final class LoggerFactory
 {
-    /**
-     * Supplies the local-file operations boundary without accessing the filesystem.
-     *
-     * @param FileOperations $fileOperations Native operations used only by enabled file-only sinks.
-     */
-    public function __construct(private readonly FileOperations $fileOperations = new FileOperations())
-    {
-    }
-
     /**
      * Invokes the factory to create a logger instance.
      *
@@ -81,20 +70,14 @@ final class LoggerFactory
             throw new \InvalidArgumentException('The logger configuration service must be a LoggerConfig instance.');
         }
         if (!$config->enabled) {
-            return new Logger(new MonologLogger(
-                name: 'application',
-                handlers: [new NullHandler()],
-                timezone: new \DateTimeZone('UTC'),
-            ));
+            return new NullLogger();
         }
-        $handler = $config->fileOnly
-            ? new PrivateFileHandler($config->filename, $config->level->value, $this->fileOperations)
-            : new StreamHandler($config->filename, $config->level->value);
+        $handler = new StreamHandler($config->filename, $config->level->value);
         if ($config->formatter === Formatter::JSON) {
             $handler->setFormatter(new JsonFormatter(includeStacktraces: false));
         }
         return new Logger(new MonologLogger(
-            name: $config->fileOnly ? 'application' : (string) gethostname(),
+            name: (string) gethostname(),
             handlers: [$handler],
             processors: $config->processors === null ? self::getDefaultProcessors()
                 : array_map(self::createProcessor(...), $config->processors),

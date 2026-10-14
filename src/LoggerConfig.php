@@ -40,7 +40,7 @@ final readonly class LoggerConfig
     public LogLevel $level;
 
     /**
-     * @var string The output path/stream, or empty for disabled file-only logging.
+     * @var string The output path or stream.
      */
     public string $filename;
 
@@ -51,9 +51,6 @@ final readonly class LoggerConfig
 
     /** @var bool Whether records may reach any sink. */
     public bool $enabled;
-
-    /** @var bool Whether only a private regular local file is allowed. */
-    public bool $fileOnly;
 
     /** @var list<Processor>|null Selected processors, or null for legacy defaults. */
     public ?array $processors;
@@ -71,13 +68,10 @@ final readonly class LoggerConfig
     public function __construct(ConfigInterface $config)
     {
         $options = self::resolveOptions($config);
-        $this->fileOnly = self::resolveBoolean($options['file_only'] ?? false, 'file_only');
         $this->level = self::resolveLevel($options['level'] ?? LogLevel::DEBUG->value);
-        $filename = $options['filename'] ?? ($this->fileOnly ? '' : self::DEFAULT_FILENAME);
-        $this->filename = self::resolveFilename($filename, $this->fileOnly);
-        $this->enabled = self::resolveBoolean($options['enabled'] ?? true, 'enabled')
-            && (!$this->fileOnly || $this->filename !== '');
-        $this->processors = self::resolveProcessors($options['processors'] ?? ($this->fileOnly ? [] : null));
+        $this->filename = self::resolveFilename($options['filename'] ?? self::DEFAULT_FILENAME);
+        $this->enabled = self::resolveBoolean($options['enabled'] ?? true, 'enabled');
+        $this->processors = self::resolveProcessors($options['processors'] ?? null);
         $this->formatter = self::resolveFormatter($options['formatter'] ?? Formatter::TEXT->value);
         $this->timezone = self::resolveTimezone($options['timezone'] ?? null);
     }
@@ -128,26 +122,19 @@ final readonly class LoggerConfig
      *
      * @param mixed $filename The non-null destination after applying the default.
      *
-     * @param bool $fileOnly Whether blank destinations disable logging and streams are forbidden.
+     * @return string The destination.
      *
-     * @return string The destination, or empty for disabled file-only logging.
-     *
-     * @throws \InvalidArgumentException When the destination type, contents or file-only scheme is invalid.
+     * @throws \InvalidArgumentException When the destination type or contents are invalid.
      */
-    private static function resolveFilename(mixed $filename, bool $fileOnly): string
+    private static function resolveFilename(mixed $filename): string
     {
         if (
-            !is_string($filename) || str_contains($filename, "\0") || (!$fileOnly && trim($filename) === '')
-            || ($fileOnly && preg_match('/^(?:[a-z0-9+.-]+:\/\/|data:)/i', $filename))
+            !is_string($filename) || str_contains($filename, "\0") || trim($filename) === ''
         ) {
             throw new \InvalidArgumentException(
                 'logger.filename must be a non-empty path or stream without NUL bytes.',
             );
         }
-        if ($fileOnly && trim($filename) === '') {
-            return '';
-        }
-
         return $filename;
     }
 
