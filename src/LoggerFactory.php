@@ -50,7 +50,6 @@ use Psr\Log\LogLevel;
  * Factory for creating Logger instances.
  *
  * This factory SHALL produce Logger instances compliant with PSR-3.
- * It MUST provide default handlers and processors when none are supplied.
  */
 final class LoggerFactory
 {
@@ -66,8 +65,8 @@ final class LoggerFactory
     /**
      * Invokes the factory to create a logger instance.
      *
-     * The provider MUST register LoggerConfig. A container timezone SHALL be
-     * resolved lazily when the normalized configuration timezone is null.
+     * The provider MUST register LoggerConfig. Configuration and timezone policy
+     * are documented in README.md under Factory configuration.
      *
      * @param ContainerInterface $container The dependency injection container.
      *

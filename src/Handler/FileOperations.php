@@ -125,6 +125,8 @@ class FileOperations
     /**
      * Appends one chunk; policy and partial-write handling belong to the handler.
      *
+     * The caller MUST hold the advisory lock across the seek and write.
+     *
      * @param resource $stream The descriptor.
      * @param string $bytes Formatted data.
      * @return int|false Bytes written or failure.

@@ -36,15 +36,17 @@ $config = new ArrayConfig([
 
 All keys are optional. Without a configuration service or section, behavior
 remains `debug`, `php://stdout`, and the container's `DateTimeZone` service (or
-the process default timezone when that service is absent). Missing and `null`
-settings use the same defaults: `debug` for level, `php://stdout` for filename,
-and the lazily resolved container/process fallback for timezone. A non-null
-timezone name or `DateTimeZone` instance takes precedence over the container.
+the process default timezone when that service is absent). In the default stream
+mode, missing and `null` settings use the same defaults: `debug` for level,
+`LoggerConfig::DEFAULT_FILENAME` for filename, and the lazily resolved
+container/process fallback for timezone. A non-null timezone name or
+`DateTimeZone` instance takes precedence over the container for enabled logging.
+See [Optional private file logging](#optional-private-file-logging) for file-only
+defaults and disabled logging.
 
 `LoggerConfig` is a readonly snapshot constructed from `ConfigInterface`. Its
 public `level`, `filename` and `timezone` properties contain validated values;
-`level` uses the backed `CoiSA\Logger\Enum\LogLevel` enum. A non-null timezone
-never resolves the container's timezone service; `null` allows that fallback.
+`level` uses the backed `CoiSA\Logger\Enum\LogLevel` enum.
 `LoggerConfig::DEFAULT_FILENAME` owns the `php://stdout` default shared by the
 configuration and logger creation APIs.
 
@@ -88,9 +90,9 @@ the 2.0 stream/processor defaults and the static creation API unchanged.
 
 With `file_only: true`, an absent, null, empty or whitespace-only filename
 disables logging; the string `"0"` is a valid relative filename. A provided
-destination MUST be a local path: stream schemes, including `php://stdout`,
-`php://stderr` and `file://`, are rejected. `enabled: false` also disables
-logging. The disabled service remains a `CoiSA\Logger\Logger` backed by
+destination MUST be a local path: PHP stream wrapper syntax, including
+`php://stdout`, `php://stderr` and `file://`, is rejected. `enabled: false` also
+disables logging. The disabled service remains a `CoiSA\Logger\Logger` backed by
 Monolog's NullHandler; it writes nothing, adds no metadata, constructs no sink
 or processors and uses fixed UTC without consulting the container or process timezone.
 Ordinary local names such as `app:debug.log` remain valid; actual PHP wrapper
@@ -98,17 +100,20 @@ syntax (including `data:` and schemes starting with digits) is rejected.
 
 File-only mode uses a constant `application` channel and no processors by
 default. The parent directory must already exist, be controlled by the
-application and not be group/world-writable. Parent aliases are canonicalized
-without following the final file. Directories, devices, final symlinks and
-multiply linked files are rejected. Creation is exclusive with a temporary
-private umask, which is restored even on failure. Every open/reopen checks
+application and not be group/world-writable. Parent aliases are freshly
+canonicalized for each record without following the final file. Directories,
+devices, final symlinks and multiply linked files are rejected. Creation is
+exclusive with a temporary private umask, which is restored even on failure.
+Opening an existing destination
+never recreates it if it disappears before opening. Every open/reopen checks
 `chmod(0600)` success and actual descriptor permissions. Every append (including
 partial writes) verifies regular-file status, effective 0600 and matching
-path/descriptor device and inode. Lock, permission or write failures close the
+path/descriptor device and inode, then seeks to EOF and writes while holding an
+exclusive advisory lock. Seek, lock, permission or write failures close the
 descriptor and raise UnexpectedValueException, including failed lock release.
-If writing and lock release both fail, the original write error is preserved;
-no stdout fallback or retry loop
-is added. Resets close the file, and changed file identities require revalidation.
+If writing and lock release both fail, the original write error is preserved.
+Failures do not trigger a stdout fallback or automatic retry. Resets close the
+file, and changed file identities require revalidation.
 
 These checks target local POSIX-style filesystems with trustworthy permission
 metadata and advisory locking. This is **not** a sandbox against hostile
