@@ -55,6 +55,9 @@ unknown levels/timezones, empty paths and paths containing NUL bytes fail during
 factory resolution with `InvalidArgumentException`. The factory does not open
 the stream until a record passes the level filter; file/permission failures are
 reported when writing. Configuration must be application-owned and trusted.
+The configured coding standard uses `mb_trim()` for filename validation;
+`symfony/polyfill-mbstring` supplies it when native mbstring functions are absent,
+without making the extension a platform requirement.
 Destinations and their permissions are administered by the application/operator;
 the library does not impose a filesystem policy or redact credentials.
 
