@@ -130,6 +130,7 @@ final class LoggerConfigTest extends TestCase
             [['enabled' => 'false']],
             [['processors' => ['Unknown\Processor']]], [['processors' => 'psr_message']],
             [['processors' => [Processor::PSR_MESSAGE, Processor::PSR_MESSAGE]]], [['processors' => [false]]],
+            [['processors' => [PsrLogMessageProcessor::class, mb_strtolower(PsrLogMessageProcessor::class)]]],
             [['processors' => [0 => Processor::PSR_MESSAGE, 2 => Processor::PSR_MESSAGE]]],
             [['processors' => ['psr_message']]], [['processors' => [\stdClass::class]]],
             [['formatter' => 'xml']],

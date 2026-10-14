@@ -114,6 +114,7 @@ without constructor arguments; optional constructor parameters are accepted.
 Already constructed objects may have constructor dependencies and are reused
 directly, without cloning or constructing them again. Distinct instances of the
 same class are allowed; repeating the same instance is rejected.
+Class names are normalized to their declared spelling before duplicate detection.
 `CoiSA\Logger\Enum\Processor` cases are also accepted as a convenience and
 normalize to their class-name values; the enum is not an extension allowlist.
 An explicit empty list disables all processors. Missing/null selections keep

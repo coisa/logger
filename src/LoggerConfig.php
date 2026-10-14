@@ -189,10 +189,9 @@ final readonly class LoggerConfig
         foreach ($processors as $id) {
             $processor = $id instanceof Processor ? $id->value : $id;
             if (
-                (!$processor instanceof ProcessorInterface
-                    && (!\is_string($processor)
-                        || !is_subclass_of($processor, ProcessorInterface::class)))
-                || \in_array($processor, $result, true)
+                !$processor instanceof ProcessorInterface
+                && (!\is_string($processor)
+                    || !is_subclass_of($processor, ProcessorInterface::class))
             ) {
                 throw new \InvalidArgumentException(
                     'logger.processors must contain unique ProcessorInterface classes or instances.',
@@ -209,6 +208,14 @@ final readonly class LoggerConfig
                         'logger.processors classes must be instantiable without arguments.',
                     );
                 }
+
+                $processor = $class->getName();
+            }
+
+            if (\in_array($processor, $result, true)) {
+                throw new \InvalidArgumentException(
+                    'logger.processors must contain unique ProcessorInterface classes or instances.',
+                );
             }
 
             $result[] = $processor;
