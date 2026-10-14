@@ -21,6 +21,7 @@ use CoiSA\Logger\Enum\LogLevel;
 use CoiSA\Logger\Enum\Formatter;
 use CoiSA\Logger\Enum\Processor;
 use FastForward\Config\ConfigInterface;
+use Monolog\Processor\ProcessorInterface;
 
 /**
  * Immutable snapshot of normalized logger configuration.
@@ -52,7 +53,7 @@ final readonly class LoggerConfig
     /** @var bool Whether records may reach any sink. */
     public bool $enabled;
 
-    /** @var list<Processor>|null Selected processors, or null for legacy defaults. */
+    /** @var list<class-string<ProcessorInterface>>|null Selected classes, or null for legacy defaults. */
     public ?array $processors;
 
     /** @var Formatter The selected record representation. */
@@ -155,11 +156,11 @@ final readonly class LoggerConfig
     }
 
     /**
-     * Validates a finite ordered processor selection.
+     * Validates an ordered selection of processor implementations.
      *
      * @param mixed $processors The selection, or null for legacy defaults.
-     * @return list<Processor>|null The normalized enum selection.
-     * @throws \InvalidArgumentException When classes, list shape or duplicates are invalid.
+     * @return list<class-string<ProcessorInterface>>|null The normalized processor classes.
+     * @throws \InvalidArgumentException When classes do not implement the contract or list entries are invalid.
      */
     private static function resolveProcessors(mixed $processors): ?array
     {
@@ -167,13 +168,18 @@ final readonly class LoggerConfig
             return null;
         }
         if (!is_array($processors) || !array_is_list($processors)) {
-            throw new \InvalidArgumentException('logger.processors must be a list of supported identifiers.');
+            throw new \InvalidArgumentException('logger.processors must be a list of processor classes.');
         }
         $result = [];
         foreach ($processors as $id) {
-            $processor = $id instanceof Processor ? $id : (is_string($id) ? Processor::tryFrom($id) : null);
-            if ($processor === null || in_array($processor, $result, true)) {
-                throw new \InvalidArgumentException('logger.processors contains an unknown or duplicate identifier.');
+            $processor = $id instanceof Processor ? $id->value : $id;
+            if (
+                !is_string($processor) || !is_subclass_of($processor, ProcessorInterface::class)
+                || in_array($processor, $result, true)
+            ) {
+                throw new \InvalidArgumentException(
+                    'logger.processors must contain unique ProcessorInterface classes.',
+                );
             }
             $result[] = $processor;
         }

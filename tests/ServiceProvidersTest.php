@@ -8,7 +8,6 @@ use PHPUnit\Framework\TestCase;
 use FastForward\Config\ConfigInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 
 /**
  * Unit coverage of public provider registrations without running a concrete container.
@@ -26,12 +25,14 @@ final class ServiceProvidersTest extends TestCase
         $provider = new ContainerInteropServiceProvider();
         $factories = $provider->getFactories();
         self::assertInstanceOf(LoggerConfigFactory::class, $factories[LoggerConfig::class]);
-        self::assertInstanceOf(LoggerFactory::class, $factories[LoggerInterface::class]);
-        self::assertIsCallable($factories[Logger::class]);
+        self::assertInstanceOf(LoggerFactory::class, $factories[Logger::class]);
         $logger = $this->createMock(LoggerInterface::class);
         $container = $this->createMock(ContainerInterface::class);
-        $container->expects(self::once())->method('get')->with(LoggerInterface::class)->willReturn($logger);
+        $container->expects(self::exactly(2))->method('get')->willReturnMap([
+            [LoggerInterface::class, $logger], [Logger::class, $logger],
+        ]);
         self::assertSame($logger, $factories['logger']($container));
+        self::assertSame($logger, $factories[LoggerInterface::class]($container));
         self::assertSame([], $provider->getExtensions());
     }
 
@@ -45,10 +46,9 @@ final class ServiceProvidersTest extends TestCase
     {
         $dependencies = (new ConfigProvider())()['dependencies'];
         self::assertSame(LoggerConfigFactory::class, $dependencies['factories'][LoggerConfig::class]);
-        self::assertSame(LoggerFactory::class, $dependencies['factories'][LoggerInterface::class]);
-        self::assertIsCallable($dependencies['factories'][Logger::class]);
+        self::assertSame(LoggerFactory::class, $dependencies['factories'][Logger::class]);
         self::assertSame(LoggerInterface::class, $dependencies['aliases']['logger']);
-        self::assertArrayNotHasKey(LoggerInterface::class, $dependencies['aliases']);
+        self::assertSame(Logger::class, $dependencies['aliases'][LoggerInterface::class]);
     }
 
     /**
@@ -91,10 +91,8 @@ final class ServiceProvidersTest extends TestCase
         $concrete = $container->get(Logger::class);
         self::assertSame($psrLogger, $container->get('logger'));
         self::assertInstanceOf(Logger::class, $concrete);
-        if ($enabled) {
-            self::assertSame($psrLogger, $concrete);
-        } else {
-            self::assertInstanceOf(NullLogger::class, $psrLogger);
+        self::assertSame($psrLogger, $concrete);
+        if (!$enabled) {
             $concrete->withLevel('debug')->emergency('disabled synthetic record');
         }
     }

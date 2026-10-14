@@ -30,7 +30,7 @@ final class ConfigProvider
      * @return array{
      *     dependencies: array{
      *         aliases: array<string, class-string>,
-     *         factories: array<class-string, class-string|callable>
+     *         factories: array<class-string, class-string>
      *     }
      * }
      */
@@ -44,17 +44,17 @@ final class ConfigProvider
     /**
      * Describes the dedicated configuration factory alongside logger aliases.
      *
-     * @return array{aliases: array<string, class-string>, factories: array<class-string, class-string|callable>}
+     * @return array{aliases: array<string, class-string>, factories: array<class-string, class-string>}
      */
     public function getDependencies(): array
     {
         return [
             'aliases' => [
                 'logger'               => LoggerInterface::class,
+                LoggerInterface::class => Logger::class,
             ],
             'factories' => [
-                LoggerInterface::class => LoggerFactory::class,
-                Logger::class => [LoggerFactory::class, 'createConcrete'],
+                Logger::class => LoggerFactory::class,
                 LoggerConfig::class => LoggerConfigFactory::class,
             ],
         ];

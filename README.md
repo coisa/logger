@@ -89,15 +89,13 @@ the 2.0 stream/processor defaults and the static creation API unchanged.
 ],
 ~~~
 
-Set `enabled: false` to return `Psr\Log\NullLogger`. It discards records without
-constructing a Monolog backend, handler or processors, or consulting the
-container's timezone fallback. The polymorphic factory is registered under
-`LoggerInterface`; the `logger` alias follows it. Enabled PSR and concrete
-`CoiSA\Logger\Logger` entries share the same instance. An explicit disabled
-concrete resolution uses a typed `Logger` backed by Monolog's `NullHandler`, so
-existing constructor injection and `withLevel()` remain safe and cannot enable
-output. That backend is constructed only when the concrete entry is requested;
-ordinary disabled PSR resolution still uses `NullLogger` directly.
+Set `enabled: false` to return a `CoiSA\Logger\Logger` backed by Monolog's
+`NullHandler`. It discards records without opening a destination, constructing
+processors or consulting the container's timezone fallback. Configured and static
+creation use the same `createLogger()` path with the `enabled` flag. The concrete
+entry, `LoggerInterface` and `logger` aliases share one instance in both modes;
+constructor injection and `withLevel()` remain safe and cannot enable a disabled
+logger's output.
 
 Enabled logging uses `StreamHandler` directly. File paths and PHP stream wrappers
 are supported; missing/null filenames retain the `php://stdout` default, and
@@ -106,11 +104,13 @@ follow Monolog's behavior. Provision appropriate directory access and file
 permissions outside this library. No strict mode-bit, symlink, inode or locking
 policy is promised.
 
-`processors` accepts a list of `CoiSA\Logger\Enum\Processor` cases or their backed
-processor class-name values. Only classes declared by the enum are accepted;
-arbitrary classes and callables are not instantiated from configuration.
+`processors` accepts a list of classes implementing
+`Monolog\Processor\ProcessorInterface`, including application-owned custom
+processors. Each class must be instantiable without constructor arguments.
+`CoiSA\Logger\Enum\Processor` cases are also accepted as a convenience and
+normalize to their class-name values; the enum is not an extension allowlist.
 An explicit empty list disables all processors. Missing/null selections keep
-legacy defaults in the enum's declaration order. For example:
+legacy defaults directly from `Processor::cases()` in declaration order. For example:
 
 ~~~php
 'processors' => [CoiSA\Logger\Enum\Processor::PSR_MESSAGE],
@@ -127,11 +127,11 @@ Select metadata-producing processors only when their content is appropriate.
 `formatter` accepts `text` (default) or `json` (one JSON record per line,
 without automatic exception stack traces). Formatter output still contains
 caller-supplied messages/context; never pass credentials or entire private
-event/request objects. Unknown/duplicate processor selections and invalid option types
+event/request objects. Non-implementing/duplicate processor classes and invalid option types
 fail during immutable configuration construction.
 
 The additional readonly properties are `enabled`, `processors`
-(normalized Processor enum list, or null for legacy defaults), and `formatter`
+(normalized processor class list, or null for legacy defaults), and `formatter`
 (Formatter enum). Configuration remains registered by all three existing
 service-provider adapters; no extra application service registration is needed.
 

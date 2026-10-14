@@ -75,7 +75,7 @@ final class LoggerConfigTest extends TestCase
         $config = $this->configuration([
             'processors' => [\Monolog\Processor\PsrLogMessageProcessor::class], 'formatter' => 'json',
         ]);
-        self::assertSame([\CoiSA\Logger\Enum\Processor::PSR_MESSAGE], $config->processors);
+        self::assertSame([\Monolog\Processor\PsrLogMessageProcessor::class], $config->processors);
         self::assertSame(\CoiSA\Logger\Enum\Formatter::JSON, $config->formatter);
     }
 
@@ -125,7 +125,7 @@ final class LoggerConfigTest extends TestCase
     public function testAcceptsProcessorEnumCases(): void
     {
         self::assertSame(
-            [Processor::PSR_MESSAGE],
+            [\Monolog\Processor\PsrLogMessageProcessor::class],
             $this->configuration(['processors' => [Processor::PSR_MESSAGE]])->processors,
         );
     }

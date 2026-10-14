@@ -28,7 +28,6 @@ use Monolog\Processor\ProcessorInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
-use Psr\Log\NullLogger;
 
 /**
  * Factory for creating Logger instances.
@@ -55,38 +54,14 @@ final class LoggerFactory
         if (!$config instanceof LoggerConfig) {
             throw new \InvalidArgumentException('The logger configuration service must be a LoggerConfig instance.');
         }
-        if (!$config->enabled) {
-            return new NullLogger();
-        }
         return self::createLogger(
             level: $config->level,
             filename: $config->filename,
-            timezone: $config->timezone ?? $this->resolveContainerTimezone($container),
+            timezone: $config->enabled ? $config->timezone ?? $this->resolveContainerTimezone($container) : null,
             processors: $config->processors,
             formatter: $config->formatter,
+            enabled: $config->enabled,
         );
-    }
-
-    /**
-     * Preserves the concrete entry type for consumers using Logger::withLevel().
-     *
-     * Enabled entries reuse the shared PSR logger. Only an explicit disabled
-     * concrete resolution constructs a no-op Monolog wrapper; the PSR entry
-     * still returns NullLogger directly.
-     *
-     * @param ContainerInterface $container The provider's container.
-     * @return Logger The typed shared logger or a disabled concrete wrapper.
-     * @throws \InvalidArgumentException When the configuration service is invalid.
-     */
-    public static function createConcrete(ContainerInterface $container): Logger
-    {
-        $config = $container->get(LoggerConfig::class);
-        if (!$config instanceof LoggerConfig) {
-            throw new \InvalidArgumentException('The logger configuration service must be a LoggerConfig instance.');
-        }
-        return $config->enabled
-            ? $container->get(LoggerInterface::class)
-            : self::createLogger(filename: $config->filename, enabled: false);
     }
 
     /**
@@ -126,7 +101,7 @@ final class LoggerFactory
      * @param string|ConfiguredLogLevel $level A legacy Monolog level string or a canonical PSR-3 enum.
      * @param string $filename The output stream or file path for logs.
      * @param \DateTimeZone|null $timezone The timezone for log timestamps.
-     * @param list<Processor>|null $processors Selected cases, or null for legacy defaults.
+     * @param list<Processor|class-string<ProcessorInterface>>|null $processors Cases/classes, or null for defaults.
      * @param Formatter $formatter The output representation.
      * @param bool $enabled Whether this concrete wrapper may emit records.
      *
@@ -165,7 +140,7 @@ final class LoggerFactory
      * @param string $level The minimum logging level (e.g., DEBUG, INFO).
      * @param string $filename The output stream or file path for logs.
      * @param \DateTimeZone|null $timezone The timezone for log timestamps.
-     * @param list<Processor>|null $processors Selected cases, or null for legacy defaults.
+     * @param list<Processor|class-string<ProcessorInterface>>|null $processors Cases/classes, or null for defaults.
      * @param Formatter $formatter The output representation.
      * @param bool $enabled Whether records may reach a stream.
      *
@@ -188,23 +163,12 @@ final class LoggerFactory
             name: $name,
             handlers: [$handler],
             processors: $enabled ? array_map(
-                static fn (Processor $processor): ProcessorInterface => new ($processor->value)(),
-                $processors ?? self::getDefaultProcessors(),
+                static fn (Processor|string $processor): ProcessorInterface => new (
+                    $processor instanceof Processor ? $processor->value : $processor
+                )(),
+                $processors ?? Processor::cases(),
             ) : [],
             timezone: $timezone,
         );
-    }
-
-    /**
-     * Returns the default processors for the logger.
-     *
-     * This method SHALL configure and return an array of default processors
-     * for enriching log entries with metadata (e.g., process ID, memory usage).
-     *
-     * @return list<Processor> All cases in the legacy default order.
-     */
-    private static function getDefaultProcessors(): array
-    {
-        return Processor::cases();
     }
 }
