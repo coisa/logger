@@ -93,9 +93,11 @@ final class ServiceProvidersTest extends TestCase
             if (isset($entries[$id])) {
                 return $entries[$id];
             }
+
             if (isset($dependencies['aliases'][$id])) {
                 return $resolve($dependencies['aliases'][$id]);
             }
+
             $factory = $dependencies['factories'][$id];
             if (\is_string($factory)) {
                 $factory = new $factory();

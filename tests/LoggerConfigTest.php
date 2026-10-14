@@ -20,6 +20,10 @@ namespace CoiSA\Logger;
 use CoiSA\Logger\Enum\Formatter;
 use CoiSA\Logger\Enum\LogLevel;
 use CoiSA\Logger\Enum\Processor;
+use CoiSA\Logger\Support\AbstractProcessor;
+use CoiSA\Logger\Support\OptionalConstructorProcessor;
+use CoiSA\Logger\Support\PrivateConstructorProcessor;
+use CoiSA\Logger\Support\RequiredConstructorProcessor;
 use FastForward\Config\ConfigInterface;
 use Monolog\Processor\PsrLogMessageProcessor;
 use PHPUnit\Framework\TestCase;
@@ -147,6 +151,53 @@ final class LoggerConfigTest extends TestCase
             [PsrLogMessageProcessor::class],
             $this->configuration(['processors' => [Processor::PSR_MESSAGE]])->processors,
         );
+    }
+
+    /**
+     * Verifies invalid constructors fail when the configuration is normalized.
+     *
+     * @dataProvider provideRejectsNonConstructibleProcessorsCases
+     *
+     * @param class-string $processor the invalid processor implementation
+     */
+    public function testRejectsNonConstructibleProcessors(string $processor): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('logger.processors classes must be instantiable without arguments.');
+        $this->configuration(['processors' => [$processor]]);
+    }
+
+    /** @return list<array{class-string}> Abstract, argument-requiring and inaccessible constructors. */
+    public static function provideRejectsNonConstructibleProcessorsCases(): iterable
+    {
+        return [[AbstractProcessor::class], [RequiredConstructorProcessor::class], [PrivateConstructorProcessor::class]];
+    }
+
+    /** Verifies optional constructor parameters do not restrict custom implementations. */
+    public function testAcceptsProcessorWithOptionalConstructorArguments(): void
+    {
+        self::assertSame(
+            [OptionalConstructorProcessor::class],
+            $this->configuration(['processors' => [OptionalConstructorProcessor::class]])->processors,
+        );
+    }
+
+    /** Verifies constructed processors retain their identities and may use required arguments. */
+    public function testAcceptsDistinctProcessorInstancesOfTheSameClass(): void
+    {
+        $first  = new RequiredConstructorProcessor('first');
+        $second = new RequiredConstructorProcessor('second');
+        $config = $this->configuration(['processors' => [$first, $second]]);
+        self::assertSame($first, $config->processors[0]);
+        self::assertSame($second, $config->processors[1]);
+    }
+
+    /** Verifies the same processor instance cannot accidentally run twice. */
+    public function testRejectsDuplicateProcessorInstances(): void
+    {
+        $processor = new RequiredConstructorProcessor('duplicate');
+        $this->expectException(\InvalidArgumentException::class);
+        $this->configuration(['processors' => [$processor, $processor]]);
     }
 
     /**

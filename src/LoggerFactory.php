@@ -71,12 +71,12 @@ final class LoggerFactory
      * This method SHALL configure a Logger with a specified logging level,
      * output stream, and timezone.
      *
-     * @param ConfiguredLogLevel|string                             $level      a legacy Monolog level string or a canonical PSR-3 enum
-     * @param string                                                $filename   the output stream or file path for logs
-     * @param null|\DateTimeZone                                    $timezone   the timezone for log timestamps
-     * @param null|list<class-string<ProcessorInterface>|Processor> $processors cases/classes, or null for defaults
-     * @param Formatter                                             $formatter  the output representation
-     * @param bool                                                  $enabled    whether this concrete wrapper may emit records
+     * @param ConfiguredLogLevel|string                                                $level      a legacy Monolog level string or a canonical PSR-3 enum
+     * @param string                                                                   $filename   the output stream or file path for logs
+     * @param null|\DateTimeZone                                                       $timezone   the timezone for log timestamps
+     * @param null|list<class-string<ProcessorInterface>|Processor|ProcessorInterface> $processors cases/classes/instances, or null for defaults
+     * @param Formatter                                                                $formatter  the output representation
+     * @param bool                                                                     $enabled    whether this concrete wrapper may emit records
      *
      * @return Logger the configured concrete Logger instance
      *
@@ -122,6 +122,7 @@ final class LoggerFactory
                 throw new \InvalidArgumentException('logger.timezone must be a valid timezone name.', 0, $exception);
             }
         }
+
         if (null !== $timezone && !$timezone instanceof \DateTimeZone) {
             throw new \InvalidArgumentException(
                 'logger.timezone or the container timezone must be a DateTimeZone, timezone name or null.',
@@ -137,13 +138,13 @@ final class LoggerFactory
      * This method SHALL initialize a Monolog instance with the given name,
      * logging level, output stream, and timezone.
      *
-     * @param string                                                $name       the logger name
-     * @param string                                                $level      The minimum logging level (e.g., DEBUG, INFO).
-     * @param string                                                $filename   the output stream or file path for logs
-     * @param null|\DateTimeZone                                    $timezone   the timezone for log timestamps
-     * @param null|list<class-string<ProcessorInterface>|Processor> $processors cases/classes, or null for defaults
-     * @param Formatter                                             $formatter  the output representation
-     * @param bool                                                  $enabled    whether records may reach a stream
+     * @param string                                                                   $name       the logger name
+     * @param string                                                                   $level      The minimum logging level (e.g., DEBUG, INFO).
+     * @param string                                                                   $filename   the output stream or file path for logs
+     * @param null|\DateTimeZone                                                       $timezone   the timezone for log timestamps
+     * @param null|list<class-string<ProcessorInterface>|Processor|ProcessorInterface> $processors cases/classes/instances, or null for defaults
+     * @param Formatter                                                                $formatter  the output representation
+     * @param bool                                                                     $enabled    whether records may reach a stream
      *
      * @return MonologLogger the configured Monolog logger instance
      */
@@ -165,9 +166,9 @@ final class LoggerFactory
             name: $name,
             handlers: [$handler],
             processors: $enabled ? array_map(
-                static fn (Processor|string $processor): ProcessorInterface => new (
-                    $processor instanceof Processor ? $processor->value : $processor
-                )(),
+                static fn (Processor|ProcessorInterface|string $processor): ProcessorInterface => $processor instanceof ProcessorInterface
+                    ? $processor
+                    : new ($processor instanceof Processor ? $processor->value : $processor)(),
                 $processors ?? Processor::cases(),
             ) : [],
             timezone: $timezone,

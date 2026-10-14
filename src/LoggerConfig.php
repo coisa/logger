@@ -24,11 +24,12 @@ use FastForward\Config\ConfigInterface;
 use Monolog\Processor\ProcessorInterface;
 
 /**
- * Immutable snapshot of normalized logger configuration.
+ * Readonly snapshot of normalized logger configuration.
  *
  * Missing or null settings SHALL use defaults. Invalid non-null settings MUST
  * fail during construction. A null timezone allows the factory to resolve its
  * container fallback; this object MUST NOT depend on a service container.
+ * Supplied processor instances retain their identity and may hold mutable state.
  */
 final readonly class LoggerConfig
 {
@@ -53,7 +54,7 @@ final readonly class LoggerConfig
     /** @var bool Whether records may reach any sink. */
     public bool $enabled;
 
-    /** @var null|list<class-string<ProcessorInterface>> Selected classes, or null for legacy defaults. */
+    /** @var null|list<class-string<ProcessorInterface>|ProcessorInterface> Selected classes/instances, or null for defaults. */
     public ?array $processors;
 
     /** @var Formatter The selected record representation. */
@@ -92,6 +93,7 @@ final readonly class LoggerConfig
         if ($options instanceof ConfigInterface) {
             $options = $options->toArray();
         }
+
         if (!\is_array($options)) {
             throw new \InvalidArgumentException('logger must be an array.');
         }
@@ -130,7 +132,9 @@ final readonly class LoggerConfig
     private static function resolveFilename(mixed $filename): string
     {
         if (
-            !\is_string($filename) || str_contains($filename, "\0") || '' === mb_trim($filename)
+            !\is_string($filename)
+            || str_contains($filename, "\0")
+            || '' === mb_trim($filename)
         ) {
             throw new \InvalidArgumentException(
                 'logger.filename must be a non-empty path or stream without NUL bytes.',
@@ -164,29 +168,49 @@ final readonly class LoggerConfig
      *
      * @param mixed $processors the selection, or null for legacy defaults
      *
-     * @return null|list<class-string<ProcessorInterface>> the normalized processor classes
+     * @return null|list<class-string<ProcessorInterface>|ProcessorInterface> the normalized classes or supplied instances
      *
-     * @throws \InvalidArgumentException when classes do not implement the contract or list entries are invalid
+     * @throws \InvalidArgumentException when classes cannot be constructed without arguments or list entries are invalid
      */
     private static function resolveProcessors(mixed $processors): ?array
     {
         if (null === $processors) {
             return null;
         }
-        if (!\is_array($processors) || !array_is_list($processors)) {
-            throw new \InvalidArgumentException('logger.processors must be a list of processor classes.');
+
+        if (
+            !\is_array($processors)
+            || !array_is_list($processors)
+        ) {
+            throw new \InvalidArgumentException('logger.processors must be a list of processor classes or instances.');
         }
+
         $result = [];
         foreach ($processors as $id) {
             $processor = $id instanceof Processor ? $id->value : $id;
             if (
-                !\is_string($processor) || !is_subclass_of($processor, ProcessorInterface::class)
+                (!$processor instanceof ProcessorInterface
+                    && (!\is_string($processor)
+                        || !is_subclass_of($processor, ProcessorInterface::class)))
                 || \in_array($processor, $result, true)
             ) {
                 throw new \InvalidArgumentException(
-                    'logger.processors must contain unique ProcessorInterface classes.',
+                    'logger.processors must contain unique ProcessorInterface classes or instances.',
                 );
             }
+
+            if (\is_string($processor)) {
+                $class = new \ReflectionClass($processor);
+                if (
+                    !$class->isInstantiable()
+                    || ($class->getConstructor()?->getNumberOfRequiredParameters() ?? 0) > 0
+                ) {
+                    throw new \InvalidArgumentException(
+                        'logger.processors classes must be instantiable without arguments.',
+                    );
+                }
+            }
+
             $result[] = $processor;
         }
 
@@ -226,6 +250,7 @@ final readonly class LoggerConfig
                 throw new \InvalidArgumentException('logger.timezone must be a valid timezone name.', 0, $exception);
             }
         }
+
         if (null !== $timezone && !$timezone instanceof \DateTimeZone) {
             throw new \InvalidArgumentException(
                 'logger.timezone or the container timezone must be a DateTimeZone, timezone name or null.',

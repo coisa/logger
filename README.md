@@ -107,9 +107,13 @@ follow Monolog's behavior. Provision appropriate directory access and file
 permissions outside this library. No strict mode-bit, symlink, inode or locking
 policy is promised.
 
-`processors` accepts a list of classes implementing
+`processors` accepts a list of classes or existing objects implementing
 `Monolog\Processor\ProcessorInterface`, including application-owned custom
-processors. Each class must be instantiable without constructor arguments.
+processors. Configuration rejects classes that are not publicly instantiable
+without constructor arguments; optional constructor parameters are accepted.
+Already constructed objects may have constructor dependencies and are reused
+directly, without cloning or constructing them again. Distinct instances of the
+same class are allowed; repeating the same instance is rejected.
 `CoiSA\Logger\Enum\Processor` cases are also accepted as a convenience and
 normalize to their class-name values; the enum is not an extension allowlist.
 An explicit empty list disables all processors. Missing/null selections keep
@@ -130,13 +134,15 @@ Select metadata-producing processors only when their content is appropriate.
 `formatter` accepts `text` (default) or `json` (one JSON record per line,
 without automatic exception stack traces). Formatter output still contains
 caller-supplied messages/context; never pass credentials or entire private
-event/request objects. Non-implementing/duplicate processor classes and invalid option types
-fail during immutable configuration construction.
+event/request objects. Non-implementing/duplicate processor entries, non-constructible
+classes and invalid option types fail during configuration construction.
 
 The additional readonly properties are `enabled`, `processors`
-(normalized processor class list, or null for legacy defaults), and `formatter`
+(normalized processor class/instance list, or null for legacy defaults), and `formatter`
 (Formatter enum). Configuration remains registered by all three existing
 service-provider adapters; no extra application service registration is needed.
+The selection is readonly, not deeply immutable: supplied processor objects keep
+their identity and may maintain application-owned state.
 
 Symfony Stopwatch 7.2 and 8.x are supported. To exercise both dependency lines:
 

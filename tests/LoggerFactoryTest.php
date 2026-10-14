@@ -22,6 +22,7 @@ use CoiSA\Logger\Enum\LogLevel as ConfiguredLogLevel;
 use CoiSA\Logger\Enum\Processor;
 use CoiSA\Logger\Support\CustomProcessor;
 use CoiSA\Logger\Support\MemoryLogStream;
+use CoiSA\Logger\Support\RequiredConstructorProcessor;
 use FastForward\Config\ConfigInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -61,6 +62,7 @@ final class LoggerFactoryTest extends TestCase
         if ($this->registered) {
             stream_wrapper_unregister('coisalogunit');
         }
+
         MemoryLogStream::$records   = '';
         CustomProcessor::$instances = 0;
         CustomProcessor::$calls     = 0;
@@ -325,6 +327,56 @@ final class LoggerFactoryTest extends TestCase
         self::assertSame(['custom' => 'synthetic'], $record['extra']);
         self::assertSame(1, CustomProcessor::$instances);
         self::assertSame(1, CustomProcessor::$calls);
+    }
+
+    /**
+     * Verifies both factory APIs reuse a constructed processor without cloning or rebuilding it.
+     *
+     * @dataProvider provideProcessorInstanceEnrichesRecordsCases
+     *
+     * @param bool $configured whether to resolve the registered configuration
+     */
+    public function testProcessorInstanceEnrichesRecords(bool $configured): void
+    {
+        $processor = new RequiredConstructorProcessor('instance marker');
+        if ($configured) {
+            $container = $this->createMock(ContainerInterface::class);
+            $container->method('get')->with(LoggerConfig::class)->willReturn($this->configuration([
+                'filename'  => self::DESTINATION, 'processors' => [$processor],
+                'formatter' => 'json', 'timezone' => 'UTC',
+            ]));
+            $logger = (new LoggerFactory())($container);
+        } else {
+            $logger = LoggerFactory::createLogger(
+                filename: self::DESTINATION,
+                processors: [$processor],
+                formatter: Formatter::JSON,
+            );
+        }
+
+        $logger->info('synthetic instance record');
+        $record = json_decode(MemoryLogStream::$records, true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame(['configured' => 'instance marker'], $record['extra']);
+        self::assertSame(1, $processor->calls);
+    }
+
+    /** @return list<array{bool}> Container and static creation paths. */
+    public static function provideProcessorInstanceEnrichesRecordsCases(): iterable
+    {
+        return [[true], [false]];
+    }
+
+    /** Verifies disabled logging never invokes a supplied processor instance. */
+    public function testDisabledLoggerDoesNotInvokeProcessorInstance(): void
+    {
+        $processor = new RequiredConstructorProcessor('disabled');
+        $container = $this->createMock(ContainerInterface::class);
+        $container->method('get')->with(LoggerConfig::class)->willReturn($this->configuration([
+            'enabled' => false, 'filename' => self::DESTINATION, 'processors' => [$processor],
+        ]));
+        (new LoggerFactory())($container)->emergency('must not be written');
+        self::assertSame(0, $processor->calls);
+        self::assertSame('', MemoryLogStream::$records);
     }
 
     /**
