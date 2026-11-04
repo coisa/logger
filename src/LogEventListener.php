@@ -8,7 +8,7 @@ declare(strict_types=1);
  * This source file is subject to the license that is bundled
  * with this source code in the file LICENSE.
  *
- * @link      https://github.com/coisa/logger
+ * @link      https://github.com/artificenerd/logger
  * @link      https://12factor.net/logs
  *
  * @copyright Copyright (c) 2022-2024 Felipe Sayão Lobato Abreu <github@mentor.dev.br>
